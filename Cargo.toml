@@ -1,0 +1,19 @@
+[package]
+name = "tged"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+clap = { version = "4.5.32", features = ["derive"] }
+getch-rs = "0.2.0"
+nix = "0.29.0"
+quote = "1.0.40"
+
+[profile.dev]
+opt-level = 0
+
+[profile.release]
+opt-level = 3
+
+[lib]
+proc-macro = true
