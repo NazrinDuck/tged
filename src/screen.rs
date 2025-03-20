@@ -1,7 +1,10 @@
-use crate::terminal::{
-    self,
-    cursor::{CsrMove, Cursor},
-    term::{self, Term},
+use crate::{
+    color::{Color, Colorful},
+    terminal::{
+        self,
+        cursor::{CsrMove, Cursor},
+        term::{self, Term},
+    },
 };
 use getch_rs::{Getch, Key};
 use std::{
@@ -11,6 +14,7 @@ use std::{
 use view::{Pos, View};
 
 mod interact;
+mod settings;
 mod view;
 
 pub trait Draw {
@@ -24,7 +28,6 @@ pub struct Screen {
     focus: ViewID,
     id_cnt: u64,
     view_map: HashMap<ViewID, View>,
-    term: Term,
     tmp_buffer: String,
 }
 
@@ -48,24 +51,22 @@ impl Screen {
             focus: 0,
             id_cnt: 1,
             view_map: HashMap::new(),
-            term: Term::new(),
             tmp_buffer: String::new(),
         }
     }
 
     pub fn init(&mut self) {
-        self.term.get_term_size();
-        let main_view = View::new(
+        let mut main_view = View::new(
             (Pos::Fixed(3), Pos::Fixed(3)),
             Pos::Opposite(2),
             Pos::Opposite(1),
         );
+        main_view.settings().num_offset = 5;
         self.register(main_view);
         self.focus = 1;
 
         //self.setting.pos = (2, 2);
         Cursor::reset_csr();
-        print!("{}", " ".repeat(self.term.size()));
         //term::set_csr(self.setting.pos.0, self.setting.pos.1);
         stdout().flush().unwrap();
     }
@@ -78,9 +79,22 @@ impl Screen {
         Ok(())
     }
 
-    fn clean(&self) -> std::io::Result<()> {
+    fn refresh(term: &Term) {
+        Cursor::save_csr();
         Cursor::reset_csr();
-        print!("{}", " ".repeat(self.term.size()));
+        print!(
+            "{}",
+            " ".repeat(term.size())
+                .color(&Color::new(0xa0, 0xa0, 0xa0), &Color::new(0x10, 0x10, 0x10)),
+        );
+
+        //print!("{}", " ".repeat(term.size()));
+        Cursor::restore_csr();
+    }
+
+    fn clean(term: &Term) -> std::io::Result<()> {
+        Cursor::reset_csr();
+        print!("{}", " ".repeat(term.size()));
         Cursor::reset_csr();
         stdout().flush()?;
         Ok(())
@@ -91,23 +105,24 @@ impl Screen {
         self.id_cnt += 1;
     }
 
-    pub fn interact(&mut self, cursor: &mut Cursor) -> io::Result<()> {
-        let view = self.view_map.get_mut(&self.focus).unwrap();
-        cursor.set(view.get_pos(self.term.height, self.term.width));
+    pub fn interact(&mut self, cursor: &mut Cursor, term: Term) -> io::Result<()> {
+        Screen::clean(&term)?;
+        let main_view = self.view_map.get_mut(&self.focus).unwrap();
+        cursor.set(main_view.get_text_pos(&term));
         loop {
             let ch = Getch::new();
+            let mut cls = true;
             match ch.getch() {
                 Ok(Key::Char('\r')) => {
-                    view.push_line();
-                    cursor.move_csr(1, CsrMove::Down);
+                    main_view.push_line(cursor, &term);
                 }
                 Ok(Key::Char('\t')) => {
-                    view.push_str("    ");
+                    main_view.push_str("    ");
                     cursor.move_csr(4, CsrMove::Right);
                 }
                 Ok(Key::Char(char)) => {
-                    view.push(char, cursor);
-                    cursor.move_csr(1, CsrMove::Right);
+                    //cls = false;
+                    main_view.push(char, cursor, &term);
                     /*
                     self.tmp_buffer.push(char);
                     if char == '\r' {
@@ -115,20 +130,53 @@ impl Screen {
                     }
                     */
                 }
-                Ok(Key::Up) => {
-                    view.up();
-                    cursor.move_csr(1, CsrMove::Up);
+                Ok(Key::Delete) => {
+                    main_view.delete(cursor, &term);
                 }
+                Ok(Key::Up) => {
+                    main_view.up(cursor, &term);
+                }
+
+                Ok(Key::Down) => {
+                    main_view.down(cursor, &term);
+                }
+
+                Ok(Key::Left) => {
+                    //cls = false;
+                    main_view.left(cursor, &term);
+                }
+
+                Ok(Key::Right) => {
+                    //cls = false;
+                    main_view.right(cursor, &term);
+                }
+
                 Ok(Key::Esc) => break,
-                Ok(_) => (),
+                Ok(Key::Ctrl('d')) => {
+                    cls = false;
+                    dbg!(&cursor);
+                }
+                Ok(Key::Ctrl('k')) => {
+                    cls = false;
+                    dbg!(&main_view);
+                }
+                Ok(other) => {
+                    cls = false;
+                    dbg!(other);
+                }
                 Err(e) => panic!("{}", e),
             }
-            view.draw(self.term.height, self.term.width)?;
-            //cursor.sync();
+
+            if cls {
+                Screen::refresh(&term);
+            }
+
+            main_view.draw(&term)?;
+            cursor.sync();
             //dbg!(&cursor);
             stdout().flush()?;
         }
-        self.clean()?;
+        Screen::clean(&term)?;
         Ok(())
     }
 }

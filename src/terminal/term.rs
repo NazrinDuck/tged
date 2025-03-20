@@ -27,7 +27,7 @@ impl Term {
         (self.height * self.width) as usize
     }
 
-    pub fn get_term_size(&mut self) {
+    pub fn init(&mut self) {
         let winsize: WinSize = Default::default();
         let mut res: i32;
         unsafe {

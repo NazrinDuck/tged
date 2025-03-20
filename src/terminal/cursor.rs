@@ -21,6 +21,14 @@ impl Cursor {
         self.y = pos.1;
     }
 
+    pub fn set_x(&mut self, x: u16) {
+        self.x = x;
+    }
+
+    pub fn set_y(&mut self, y: u16) {
+        self.y = y;
+    }
+
     pub fn get_x(&self) -> u16 {
         self.x
     }

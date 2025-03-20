@@ -1,6 +1,6 @@
 use clap::Parser;
 use screen::{Draw, Screen};
-use terminal::cursor::Cursor;
+use terminal::{cursor::Cursor, term::Term};
 
 mod color;
 mod file;
@@ -27,8 +27,14 @@ pub struct Args {
 
 fn main() -> std::io::Result<()> {
     let args = Args::parse();
+
+    let mut term = Term::new();
+    term.init();
+
     let mut screen = Screen::new();
     screen.init();
-    screen.interact(&mut Cursor::new())?;
+
+    // start interact
+    screen.interact(&mut Cursor::new(), term)?;
     Ok(())
 }
