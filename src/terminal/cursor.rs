@@ -65,7 +65,7 @@ impl Cursor {
 
     #[inline]
     pub fn set_csr(x: u16, y: u16) {
-        print!("\x1b[{x};{y}H")
+        print!("\x1b[{y};{x}H")
     }
 
     #[inline]

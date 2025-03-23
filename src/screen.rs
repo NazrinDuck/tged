@@ -57,12 +57,22 @@ impl Screen {
 
     pub fn init(&mut self) {
         let mut main_view = View::new(
-            (Pos::Fixed(3), Pos::Fixed(3)),
-            Pos::Opposite(2),
+            (Pos::Fixed(6), Pos::Fixed(12)),
+            Pos::Opposite(5),
+            Pos::Opposite(12),
+        );
+        let mut bottom_bar = View::new(
+            (Pos::Fixed(0), Pos::Fixed(0)),
+            Pos::Fixed(1),
             Pos::Opposite(1),
         );
+        bottom_bar.push_str("Hello Bar");
+
         main_view.settings().num_offset = 5;
+        main_view.settings().is_show_num = true;
+        bottom_bar.settings().is_show_num = false;
         self.register(main_view);
+        self.register(bottom_bar);
         self.focus = 1;
 
         //self.setting.pos = (2, 2);
@@ -85,7 +95,7 @@ impl Screen {
         print!(
             "{}",
             " ".repeat(term.size())
-                .color(&Color::new(0xa0, 0xa0, 0xa0), &Color::new(0x10, 0x10, 0x10)),
+                .color(&Color::new(0x20, 0x20, 0x20), &Color::new(0x10, 0x10, 0x10)),
         );
 
         //print!("{}", " ".repeat(term.size()));
@@ -107,22 +117,20 @@ impl Screen {
 
     pub fn interact(&mut self, cursor: &mut Cursor, term: Term) -> io::Result<()> {
         Screen::clean(&term)?;
-        let main_view = self.view_map.get_mut(&self.focus).unwrap();
-        cursor.set(main_view.get_text_pos(&term));
+        //cursor.set(main_view.get_text_pos(&term));
         loop {
+            let main_view = self.view_map.get_mut(&self.focus).unwrap();
             let ch = Getch::new();
             let mut cls = true;
             match ch.getch() {
                 Ok(Key::Char('\r')) => {
-                    main_view.push_line(cursor, &term);
+                    main_view.push_line(&term);
                 }
                 Ok(Key::Char('\t')) => {
                     main_view.push_str("    ");
-                    cursor.move_csr(4, CsrMove::Right);
                 }
                 Ok(Key::Char(char)) => {
-                    //cls = false;
-                    main_view.push(char, cursor, &term);
+                    main_view.push(char);
                     /*
                     self.tmp_buffer.push(char);
                     if char == '\r' {
@@ -131,30 +139,33 @@ impl Screen {
                     */
                 }
                 Ok(Key::Delete) => {
-                    main_view.delete(cursor, &term);
+                    main_view.delete(&term);
                 }
                 Ok(Key::Up) => {
-                    main_view.up(cursor, &term);
+                    main_view.up(&term);
                 }
 
                 Ok(Key::Down) => {
-                    main_view.down(cursor, &term);
+                    main_view.down(&term);
                 }
 
                 Ok(Key::Left) => {
                     //cls = false;
-                    main_view.left(cursor, &term);
+                    main_view.left();
                 }
 
                 Ok(Key::Right) => {
                     //cls = false;
-                    main_view.right(cursor, &term);
+                    main_view.right();
                 }
 
                 Ok(Key::Esc) => break,
                 Ok(Key::Ctrl('d')) => {
+                    Cursor::reset_csr();
                     cls = false;
-                    dbg!(&cursor);
+                    dbg!(&main_view.curr_line);
+                    dbg!(&main_view.curr_idx);
+                    dbg!(&main_view.scroll);
                 }
                 Ok(Key::Ctrl('k')) => {
                     cls = false;
@@ -171,8 +182,15 @@ impl Screen {
                 Screen::refresh(&term);
             }
 
+            for (id, view) in self.view_map.iter() {
+                if *id != self.focus {
+                    view.draw(&term)?;
+                }
+            }
+            let main_view = self.view_map.get_mut(&self.focus).unwrap();
             main_view.draw(&term)?;
-            cursor.sync();
+            main_view.set_cursor(&term);
+            //cursor.sync();
             //dbg!(&cursor);
             stdout().flush()?;
         }

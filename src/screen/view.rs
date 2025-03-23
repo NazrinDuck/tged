@@ -2,6 +2,7 @@ use crate::terminal::cursor::CsrMove;
 use std::{
     collections::HashMap,
     io::{self, Write},
+    usize,
 };
 
 use super::ViewID;
@@ -42,9 +43,10 @@ impl Line {
 pub struct View {
     id: ViewID,
     pos: (Pos, Pos),
-    curr_line: usize,
+    pub curr_line: usize,
+    pub curr_idx: usize,
     content: Vec<String>,
-    scroll: u64,
+    pub scroll: usize,
     height: Pos,
     width: Pos,
     prior: u8,
@@ -57,6 +59,7 @@ impl View {
             id: 0,
             pos,
             curr_line: 0,
+            curr_idx: 0,
             content: Vec::from([String::new()]),
             scroll: 0,
             height,
@@ -114,106 +117,153 @@ impl View {
         col
     }
 
-    pub fn push(&mut self, ch: char, csr: &mut Cursor, term: &Term) {
-        let (col, row): (usize, usize) = self.get_csr_vpos(csr, term);
+    #[inline]
+    fn pre_all_lines(&self, term: &Term) -> usize {
+        let (curr_line, idx) = (self.curr_line, self.curr_idx);
+
+        let mut line_cnt = 0;
         let max = self.get_vpos_max(term);
+        for line in self.content.iter().take(curr_line).skip(self.scroll) {
+            if line.is_empty() {
+                line_cnt += 1;
+                continue;
+            }
 
-        if col >= max {
-            csr.move_csr(1, CsrMove::Down);
-            csr.set_x(self.vpos(term, 0));
+            let len = line.len();
+            line_cnt += (len / max) + if (len % max) == 0 { 0 } else { 1 };
         }
-        csr.move_csr(1, CsrMove::Right);
 
-        let col = self.wrap_col(term, col);
-        self.content[self.curr_line].insert(col, ch);
+        if idx >= max {
+            line_cnt += idx / max
+        }
+
+        line_cnt
+    }
+
+    #[inline]
+    fn line_inc(&mut self, term: &Term) {
+        let pre_all_lines = self.pre_all_lines(term);
+
+        let height = (self.height.unwrap(term.height) - self.pos.1.unwrap(term.height)) as usize;
+
+        if pre_all_lines + 4 > height {
+            self.scroll += 1;
+        }
+        self.curr_line += 1;
+    }
+
+    #[inline]
+    fn line_dec(&mut self, term: &Term) {
+        if self.scroll != 0 {
+            let pre_all_lines = self.pre_all_lines(term);
+
+            if pre_all_lines < 4 {
+                self.scroll -= 1;
+            }
+        }
+        self.curr_line -= 1;
+    }
+
+    pub fn push(&mut self, ch: char) {
+        self.content[self.curr_line].insert(self.curr_idx, ch);
+        self.curr_idx += 1;
     }
 
     pub fn push_str(&mut self, string: &str) {
         self.content[self.curr_line].push_str(string);
+        self.curr_idx += string.len();
     }
 
-    pub fn push_line(&mut self, csr: &mut Cursor, term: &Term) {
-        let (col, row): (usize, usize) = self.get_csr_vpos(csr, term);
+    pub fn push_line(&mut self, term: &Term) {
+        let (line, idx) = (self.curr_line, self.curr_idx);
 
-        csr.set_x(self.vpos(term, 0));
-        csr.move_csr(1, CsrMove::Down);
+        let content = self.content[line].clone();
+        let (first, last) = content.split_at(idx);
+        self.content[line] = String::from(first);
+        self.content.insert(line + 1, String::from(last));
 
-        let col = self.wrap_col(term, col);
-        let content = self.content[self.curr_line].clone();
-        let (first, last) = content.split_at(col);
-
-        self.content[self.curr_line] = String::from(first);
-        self.content.insert(self.curr_line + 1, String::from(last));
-
-        self.curr_line += 1;
+        //self.curr_line += 1;
+        self.line_inc(term);
+        self.curr_idx = 0;
     }
 
-    pub fn delete(&mut self, csr: &mut Cursor, term: &Term) {
-        let (col, row): (usize, usize) = self.get_csr_vpos(csr, term);
+    pub fn delete(&mut self, term: &Term) {
+        let (line, idx) = (self.curr_line, self.curr_idx);
 
-        if col > 0 {
-            let col = self.wrap_col(term, col);
-            self.content[self.curr_line].remove(col - 1);
+        if idx == 0 {
+            if line == 0 {
+                return;
+            }
+            self.content.remove(line);
 
-            csr.move_csr(1, CsrMove::Left);
-        } else if self.curr_line > 0 && self.wrap_col(term, col) == 0 {
-            let x = self.get_text_pos(term).0;
-            let rest = self.content[self.curr_line].clone();
-
-            self.content.remove(row);
-            self.curr_line -= 1;
-
-            let length = self.content[self.curr_line].len();
-
-            self.content[self.curr_line] += &rest;
-
-            csr.move_csr(1, CsrMove::Up);
-            csr.set_x(self.vpos(term, length as u16));
+            self.curr_idx = self.content[line - 1].len();
+            self.line_dec(term);
+            //self.curr_line -= 1;
+        } else {
+            self.content[line].remove(idx - 1);
+            self.curr_idx -= 1;
         }
     }
 
-    pub fn up(&mut self, csr: &mut Cursor, term: &Term) {
-        if self.curr_line > 0 {
-            let x = self.get_text_pos(term).0;
-            self.curr_line -= 1;
-            let col: usize = (csr.get_x() - x) as usize;
-            let length = self.content[self.curr_line].len();
-            if col > length {
-                csr.set_x(self.vpos(term, length as u16));
+    pub fn up(&mut self, term: &Term) {
+        let (line, idx) = (self.curr_line, self.curr_idx);
+
+        if line > 0 {
+            //self.curr_line -= 1;
+            if idx > self.content[line - 1].len() {
+                self.curr_idx = self.content[line - 1].len()
+            };
+            self.line_dec(term);
+        }
+    }
+
+    pub fn down(&mut self, term: &Term) {
+        let (line, idx) = (self.curr_line, self.curr_idx);
+
+        if line < self.content.len() - 1 {
+            //self.curr_line += 1;
+            if idx > self.content[line + 1].len() {
+                self.curr_idx = self.content[line + 1].len()
+            };
+            self.line_inc(term);
+        }
+    }
+
+    pub fn left(&mut self) {
+        if self.curr_idx > 0 {
+            self.curr_idx -= 1;
+        }
+    }
+
+    pub fn right(&mut self) {
+        if self.curr_idx < self.content[self.curr_line].len() {
+            self.curr_idx += 1;
+        }
+    }
+
+    pub fn set_cursor(&self, term: &Term) {
+        let (curr_line, idx) = (self.curr_line, self.curr_idx);
+
+        let max = self.get_vpos_max(term);
+        let (mut csr_x, mut csr_y): (u16, u16) = self.get_text_pos(term);
+
+        csr_x += (idx % max) as u16;
+
+        for line in self.content.iter().take(curr_line).skip(self.scroll) {
+            if line.is_empty() {
+                csr_y += 1;
+                continue;
             }
 
-            csr.move_csr(1, CsrMove::Up);
+            let len = line.len();
+            csr_y += (len / max) as u16 + if (len % max) == 0 { 0u16 } else { 1u16 };
         }
-    }
 
-    pub fn down(&mut self, csr: &mut Cursor, term: &Term) {
-        if self.curr_line < self.content.len() - 1 {
-            let x = self.get_text_pos(term).0;
-            self.curr_line += 1;
-            let col: usize = (csr.get_x() - x) as usize;
-            let length = self.content[self.curr_line].len();
-            if col > length {
-                csr.set_x(self.vpos(term, length as u16));
-            }
-
-            csr.move_csr(1, CsrMove::Down);
+        if idx >= max {
+            csr_y += (idx / max) as u16
         }
-    }
 
-    pub fn left(&mut self, csr: &mut Cursor, term: &Term) {
-        let x = self.get_text_pos(term).0;
-        if csr.get_x() > x {
-            csr.move_csr(1, CsrMove::Left);
-        }
-    }
-
-    pub fn right(&mut self, csr: &mut Cursor, term: &Term) {
-        let x = self.get_text_pos(term).0;
-        let col: usize = (csr.get_x() - x) as usize;
-
-        if col < self.content[self.curr_line].len() {
-            csr.move_csr(1, CsrMove::Right);
-        }
+        Cursor::set_csr(csr_x, csr_y);
     }
 
     pub fn draw(&self, term: &Term) -> io::Result<()> {
@@ -221,68 +271,59 @@ impl View {
 
         let x_pos = self.pos.0.unwrap(width);
         let y_pos = self.pos.1.unwrap(height);
+
         let height = self.height.unwrap(height);
         let width = self.width.unwrap(width);
 
+        let is_show_num = self.settings.is_show_num;
         let line_num_offset = self.settings.num_offset;
-        let mut line_num = 1;
+        let mut line_num = self.scroll + 1;
 
         let max_line = width - x_pos - line_num_offset;
+        let max_height = (height - y_pos) as usize;
 
         Cursor::set_csr(x_pos, y_pos);
 
-        for line in self.content.iter().take(self.content.len() - 1) {
-            Cursor::csr_setcol(x_pos);
-            print!(
-                "{:>width$}│",
-                line_num,
-                width = (line_num_offset - 1) as usize
-            );
+        let mut height_cnt = 0;
+        for line in self.content.iter().skip(self.scroll)
+        //.take((height - y_pos) as usize)
+        {
+            if height_cnt > max_height {
+                break;
+            }
+
+            if is_show_num {
+                Cursor::csr_setcol(x_pos);
+                print!(
+                    "{:>width$}│",
+                    line_num,
+                    width = (line_num_offset - 1) as usize
+                );
+            }
+
             if line.len() as u16 > max_line {
                 for (subline, cnt) in line.splitn_at(max_line as usize) {
-                    if cnt >= 1 {
+                    if height_cnt > max_height {
+                        break;
+                    }
+
+                    if is_show_num && cnt >= 1 {
                         Cursor::csr_setcol(x_pos);
                         print!("{:>width$}", "│", width = line_num_offset as usize);
                     }
+
                     Cursor::csr_setcol(x_pos + line_num_offset);
-                    print!("{}", subline);
-                    Cursor::csr_nextline();
-                    //dbg!(subline);
+                    println!("{}", subline);
+                    height_cnt += 1;
                 }
             } else {
                 Cursor::csr_setcol(x_pos + line_num_offset);
                 println!("{}", line);
+                height_cnt += 1;
             }
             line_num += 1;
         }
-        Cursor::csr_setcol(x_pos);
-
-        print!(
-            "{:>width$}│",
-            line_num,
-            width = (line_num_offset - 1) as usize
-        );
-        let last_line = self.content.last().unwrap();
-        if last_line.len() as u16 > max_line {
-            for (subline, cnt) in last_line.splitn_at(max_line as usize) {
-                if cnt >= 1 {
-                    Cursor::csr_setcol(x_pos);
-                    print!("{:>width$}", "│", width = line_num_offset as usize);
-                }
-                if subline.len() < max_line as usize {
-                    print!("{}", subline);
-                } else {
-                    print!("{}", subline);
-                    Cursor::csr_nextline();
-                    Cursor::csr_setcol(x_pos + line_num_offset);
-                }
-                //dbg!(subline);
-            }
-        } else {
-            print!("{}", last_line);
-        }
         io::stdout().flush()?;
-        //dbg!(&self.content);
         Ok(())
     }
 }
@@ -330,10 +371,3 @@ impl Iterator for SplitNAt {
         }
     }
 }
-
-pub struct ViewMap {
-    map: HashMap<ViewID, View>,
-    curr_view: ViewID,
-}
-
-impl ViewMap {}

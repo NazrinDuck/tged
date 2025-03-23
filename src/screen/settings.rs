@@ -1,7 +1,7 @@
 #[derive(Default, Debug)]
 pub struct Settings {
     pub num_offset: u16,
-    is_show_num: bool,
+    pub is_show_num: bool,
 }
 
 impl Settings {
