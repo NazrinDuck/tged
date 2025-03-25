@@ -1,10 +1,3 @@
-pub enum CsrMove {
-    Up,
-    Down,
-    Left,
-    Right,
-}
-
 #[derive(Debug)]
 pub struct Cursor {
     x: u16,
@@ -12,6 +5,7 @@ pub struct Cursor {
 }
 
 impl Cursor {
+    /*
     pub fn new() -> Self {
         Cursor { x: 0, y: 0 }
     }
@@ -57,6 +51,7 @@ impl Cursor {
             CsrMove::Right => self.x += val,
         };
     }
+    */
 
     #[inline]
     pub fn reset_csr() {

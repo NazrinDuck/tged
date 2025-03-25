@@ -1,11 +1,15 @@
 use clap::Parser;
 use screen::{Draw, Screen};
 use terminal::{cursor::Cursor, term::Term};
+use view::Pos;
 
 mod color;
 mod file;
+mod macros;
 mod screen;
+mod settings;
 mod terminal;
+mod view;
 
 /*
 *       TgEd
@@ -15,6 +19,9 @@ mod terminal;
 *        |
 *       View
 */
+
+use crate::view::settings::Settings;
+use tged::view;
 
 #[derive(Parser)]
 #[command(version = "0.1.0",author = "NazrinDuck", about, long_about = None)]
@@ -32,9 +39,10 @@ fn main() -> std::io::Result<()> {
     term.init();
 
     let mut screen = Screen::new();
-    screen.init();
+
+    screen.init(&term);
 
     // start interact
-    screen.interact(&mut Cursor::new(), term)?;
+    screen.interact(term)?;
     Ok(())
 }

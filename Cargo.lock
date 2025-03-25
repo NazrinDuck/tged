@@ -245,7 +245,9 @@ dependencies = [
  "clap",
  "getch-rs",
  "nix 0.29.0",
+ "proc-macro2",
  "quote",
+ "syn",
 ]
 
 [[package]]

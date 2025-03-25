@@ -2,6 +2,7 @@ use std::error::Error;
 
 pub const END: &str = "\x1b[0m";
 
+#[derive(Debug, Default)]
 pub struct Color {
     r: u8,
     g: u8,
