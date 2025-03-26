@@ -1,6 +1,8 @@
 use crate::terminal::term::Term;
+use crate::FileMod;
 use getch_rs::Key;
 use std::io;
+use std::ops::{Add, Neg};
 
 pub mod bottombar;
 pub mod mainview;
@@ -9,7 +11,7 @@ pub mod topbar;
 
 pub type ViewID = u64;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Pos {
     Fixed(u16),
     Opposite(u16),
@@ -19,14 +21,52 @@ impl Pos {
     pub fn unwrap(&self, value: u16) -> u16 {
         match self {
             Pos::Fixed(val) => *val + 1,
-            Pos::Opposite(val) => value - val + 1,
+            Pos::Opposite(val) => value - *val + 1,
+        }
+    }
+
+    pub fn get(&self) -> u16 {
+        match self {
+            Pos::Fixed(val) => *val,
+            Pos::Opposite(val) => *val,
         }
     }
 }
 
-pub trait View {
-    fn matchar(&mut self, term: &Term, key: Key);
+impl Add<i16> for Pos {
+    type Output = Self;
+    fn add(self, rhs: i16) -> Self::Output {
+        if rhs == 0 {
+            return self;
+        }
+        let abs = rhs.unsigned_abs();
+        let mut val = self.get();
+        if rhs > 0 {
+            val += abs;
+        } else {
+            if val < abs {
+                return self;
+            }
+            val -= abs;
+        }
+
+        match self {
+            Pos::Fixed(_) => Pos::Fixed(val),
+            Pos::Opposite(_) => Pos::Opposite(val),
+        }
+    }
+}
+
+pub trait Position {
+    fn get_start(&self, term: &Term) -> (u16, u16);
+    fn get_end(&self, term: &Term) -> (u16, u16);
+    fn resize(&mut self, dx_s: i16, dy_s: i16, dx_e: i16, dy_e: i16);
+}
+
+pub trait View: Position {
+    fn matchar(&mut self, term: &Term, file_mod: &mut FileMod, key: Key);
     fn set_cursor(&self, term: &Term);
+    fn update(&mut self, term: &Term, file_mod: &mut FileMod);
     fn draw(&self, term: &Term) -> io::Result<()>;
 }
 

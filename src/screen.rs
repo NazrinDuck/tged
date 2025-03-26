@@ -1,5 +1,6 @@
 use crate::{
     color::{Color, Colorful},
+    file::FileMod,
     terminal::{cursor::Cursor, term::Term},
 };
 use getch_rs::{Getch, Key};
@@ -10,30 +11,11 @@ use std::{
 
 use crate::view::{bottombar::BottomBar, mainview::MainView, topbar::TopBar, Pos, View, ViewID};
 
-pub trait Draw {
-    fn draw(&self) -> std::io::Result<()>;
-    fn nextline(&self);
-}
-
 pub struct Screen {
     focus: ViewID,
     id_cnt: u64,
     view_map: HashMap<ViewID, Box<dyn View>>,
     tmp_buffer: String,
-}
-
-impl Draw for Screen {
-    fn draw(&self) -> std::io::Result<()> {
-        //term::set_csr(self.setting.pos.0, self.setting.pos.1);
-        print!("{}", self.tmp_buffer);
-        stdout().flush()?;
-        Ok(())
-    }
-
-    fn nextline(&self) {
-        Cursor::csr_nextline();
-        Cursor::csr_setcol(5);
-    }
 }
 
 impl Screen {
@@ -46,26 +28,19 @@ impl Screen {
         }
     }
 
-    pub fn init(&mut self, term: &Term) {
-        let mut main_view = MainView::new(
-            (Pos::Fixed(5), Pos::Fixed(1)),
-            Pos::Opposite(1),
-            Pos::Opposite(1),
-        );
+    pub fn init(&mut self, term: &Term, file_mod: &mut FileMod) -> io::Result<()> {
+        let mut main_view = MainView::new();
         let mut top_bar = TopBar::new();
         let mut bottom_bar = BottomBar::new();
-        /*
-        let mut top_bar = MainView::new(
-            (Pos::Fixed(0), Pos::Fixed(0)),
-            Pos::Fixed(1),
-            Pos::Opposite(0),
-        );
-        */
-        top_bar.push_str("Hello B3r");
-        bottom_bar.push_str("Hello Bottom");
+        let content = file_mod.get_content();
 
+        main_view.init(content);
         main_view.settings().num_offset = 5;
         main_view.settings().is_show_num = true;
+
+        //top_bar.push_str("Hello B3r");
+        bottom_bar.push_str("Hello Bottom B3r");
+
         self.register(Box::new(main_view));
         self.register(Box::new(top_bar));
         self.register(Box::new(bottom_bar));
@@ -74,7 +49,8 @@ impl Screen {
         //self.setting.pos = (2, 2);
         Cursor::reset_csr();
         //term::set_csr(self.setting.pos.0, self.setting.pos.1);
-        stdout().flush().unwrap();
+        stdout().flush()?;
+        Ok(())
     }
 
     fn refresh(term: &Term) {
@@ -83,7 +59,7 @@ impl Screen {
         print!(
             "{}",
             " ".repeat(term.size())
-                .color(&Color::new(0x20, 0x20, 0x20), &Color::new(0x10, 0x10, 0x10)),
+                .color(&Color::new(0x28, 0x28, 0x28), &Color::new(0x10, 0x10, 0x10)),
         );
 
         //print!("{}", " ".repeat(term.size()));
@@ -103,12 +79,30 @@ impl Screen {
         self.id_cnt += 1;
     }
 
-    pub fn interact(&mut self, term: Term) -> io::Result<()> {
+    pub fn interact(&mut self, term: Term, file_mod: &mut FileMod) -> io::Result<()> {
         Screen::clean(&term)?;
+
+        let mut cls = true;
         loop {
-            let main_view = self.view_map.get_mut(&self.focus).unwrap();
             let ch = Getch::new();
-            let mut cls = true;
+
+            if cls {
+                Screen::refresh(&term);
+
+                for (id, view) in self.view_map.iter_mut() {
+                    view.update(&term, file_mod);
+                    if *id != self.focus {
+                        view.draw(&term)?;
+                    }
+                }
+                let main_view = self.view_map.get_mut(&self.focus).unwrap();
+                main_view.draw(&term)?;
+                main_view.set_cursor(&term);
+            }
+            let main_view = self.view_map.get_mut(&self.focus).unwrap();
+            stdout().flush()?;
+
+            cls = true;
             match ch.getch() {
                 // press ESC to leave
                 Ok(Key::Esc) => break,
@@ -125,29 +119,34 @@ impl Screen {
                 }
                 Ok(Key::Ctrl('k')) => {
                     cls = false;
-                    //dbg!(&main_view);
+                    dbg!(&file_mod);
+                }
+
+                Ok(Key::Alt(key)) => {
+                    cls = false;
+                    dbg!(key);
+                }
+
+                Ok(Key::Other(key)) => {
+                    match key[..] {
+                        // Alt(Left)
+                        [27, 91, 49, 59, 51, 68] => {
+                            main_view.resize(-1, 0, 0, 0);
+                        }
+                        // Alt(Right)
+                        [27, 91, 49, 59, 51, 67] => {
+                            main_view.resize(1, 0, 0, 0);
+                        }
+                        _ => (),
+                    };
                 }
 
                 // measure input key
                 Ok(key) => {
-                    main_view.matchar(&term, key);
+                    main_view.matchar(&term, file_mod, key);
                 }
                 Err(e) => panic!("{}", e),
             }
-
-            if cls {
-                Screen::refresh(&term);
-            }
-
-            for (id, view) in self.view_map.iter() {
-                if *id != self.focus {
-                    view.draw(&term)?;
-                }
-            }
-            let main_view = self.view_map.get_mut(&self.focus).unwrap();
-            main_view.draw(&term)?;
-            main_view.set_cursor(&term);
-            stdout().flush()?;
         }
 
         Screen::clean(&term)?;

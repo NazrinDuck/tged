@@ -1,5 +1,6 @@
 use clap::Parser;
-use screen::{Draw, Screen};
+use file::FileMod;
+use screen::Screen;
 use terminal::{cursor::Cursor, term::Term};
 use view::Pos;
 
@@ -35,14 +36,16 @@ pub struct Args {
 fn main() -> std::io::Result<()> {
     let args = Args::parse();
 
+    let mut file_mod = FileMod::from(args.files_name);
+
     let mut term = Term::new();
     term.init();
 
     let mut screen = Screen::new();
 
-    screen.init(&term);
+    screen.init(&term, &mut file_mod);
 
     // start interact
-    screen.interact(term)?;
+    screen.interact(term, &mut file_mod)?;
     Ok(())
 }

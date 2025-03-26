@@ -1,27 +1,33 @@
 use super::{settings::Settings, Pos, SplitNAt, View, ViewID};
 use getch_rs::Key;
 use std::io::{self, Write};
+use tged::view;
 
+use crate::color::{Color, Colorful};
 use crate::rprintln;
-use crate::terminal::cursor::Cursor;
-use crate::terminal::term::Term;
+use crate::{
+    terminal::{cursor::Cursor, term::Term},
+    view::Position,
+    FileMod,
+};
 
-#[derive(Debug)]
+#[view]
+#[start=(5, 2)]
+#[end=(-1, -2)]
+#[bcolor=(0x20, 0x20, 0x20)]
+#[fcolor=(0xa0, 0xa0, 0xa0)]
 pub struct MainView {
-    id: ViewID,
-    pos: (Pos, Pos),
     curr_line: usize,
     curr_idx: usize,
     content: Vec<String>,
     scroll: usize,
-    height: Pos,
-    width: Pos,
     prior: u8,
     settings: Settings,
 }
 
 impl View for MainView {
-    fn matchar(&mut self, term: &Term, key: Key) {
+    fn update(&mut self, _: &Term, _: &mut FileMod) {}
+    fn matchar(&mut self, term: &Term, file_mod: &mut FileMod, key: Key) {
         match key {
             Key::Char('\r') => {
                 self.push_line(term);
@@ -31,6 +37,9 @@ impl View for MainView {
             }
             Key::Char(char) => {
                 self.push(char);
+            }
+            Key::Ctrl('s') => {
+                file_mod.save(self.flatten()).unwrap();
             }
             Key::Delete => {
                 self.delete(term);
@@ -44,13 +53,16 @@ impl View for MainView {
             }
 
             Key::Left => {
-                //cls = false;
                 self.left();
             }
 
             Key::Right => {
-                //cls = false;
                 self.right();
+            }
+
+            Key::F(6) => {
+                file_mod.shift();
+                self.sync(file_mod).unwrap();
             }
 
             other => {
@@ -85,10 +97,12 @@ impl View for MainView {
     }
 
     fn draw(&self, term: &Term) -> io::Result<()> {
+        self.refresh(term);
+
         let (x_pos, y_pos) = self.get_pos(term);
 
-        let height = self.height.unwrap(term.height);
-        let width = self.width.unwrap(term.width);
+        let height = self.end.1.unwrap(term.height);
+        let width = self.end.0.unwrap(term.width);
 
         let is_show_num = self.settings.is_show_num;
         let line_num_offset = self.settings.num_offset;
@@ -97,6 +111,8 @@ impl View for MainView {
 
         let max_line = width - x_pos - line_num_offset;
         let max_height = (height - y_pos) as usize;
+
+        let (bclr, fclr) = (&self.bcolor, &self.fcolor);
 
         Cursor::set_csr(x_pos, y_pos);
 
@@ -124,7 +140,7 @@ impl View for MainView {
 
             for subline in lines {
                 Cursor::csr_setcol(x_pos);
-                print!("{}", subline);
+                print!("{}", subline.color(bclr, fclr));
                 height_cnt += 1;
                 if height_cnt > max_height {
                     break 'out;
@@ -176,21 +192,22 @@ impl View for MainView {
 }
 
 impl MainView {
-    pub fn new(pos: (Pos, Pos), height: Pos, width: Pos) -> Self {
-        MainView {
-            id: 0,
-            pos,
-            curr_line: 0,
-            curr_idx: 0,
-            content: Vec::from([String::new()]),
-            scroll: 0,
-            height,
-            width,
-            prior: 0,
-            settings: Settings::default(),
+    pub fn init(&mut self, content: &str) {
+        for line in content.lines() {
+            self.content.push(line.to_string());
         }
     }
 
+    pub fn sync(&mut self, file_mod: &mut FileMod) -> io::Result<()> {
+        let content = file_mod.get_content();
+        self.content = Vec::new();
+        for line in content.lines() {
+            self.content.push(line.to_string());
+        }
+        Ok(())
+    }
+
+    #[inline]
     pub fn settings(&mut self) -> &mut Settings {
         &mut self.settings
     }
@@ -198,31 +215,22 @@ impl MainView {
     #[inline]
     pub fn get_pos(&self, term: &Term) -> (u16, u16) {
         let (height, width) = (term.height, term.width);
-        (self.pos.0.unwrap(width), self.pos.1.unwrap(height))
+        usize::default();
+        (self.start.0.unwrap(width), self.start.1.unwrap(height))
     }
 
     #[inline]
     pub fn get_text_pos(&self, term: &Term) -> (u16, u16) {
         let (height, width) = (term.height, term.width);
         (
-            self.pos.0.unwrap(width) + self.settings.num_offset,
-            self.pos.1.unwrap(height),
+            self.start.0.unwrap(width) + self.settings.num_offset,
+            self.start.1.unwrap(height),
         )
     }
 
-    /*
-    #[inline]
-    fn get_csr_vpos(&self, csr: &mut Cursor, term: &Term) -> (usize, usize) {
-        let (x, y) = self.get_text_pos(term);
-        let col: usize = (csr.get_x() - x) as usize;
-        let row: usize = (csr.get_y() - y) as usize;
-        (col, row)
-    }
-    */
-
     #[inline]
     fn get_vpos_max(&self, term: &Term) -> usize {
-        (self.width.unwrap(term.width) - self.get_text_pos(term).0) as usize
+        (self.end.0.unwrap(term.width) - self.get_text_pos(term).0) as usize
     }
 
     #[inline]
@@ -252,7 +260,7 @@ impl MainView {
     fn line_inc(&mut self, term: &Term) {
         let pre_all_lines = self.pre_all_lines(term);
 
-        let height = (self.height.unwrap(term.height) - self.pos.1.unwrap(term.height)) as usize;
+        let height = (self.end.1.unwrap(term.height) - self.start.1.unwrap(term.height)) as usize;
 
         if pre_all_lines + 4 > height {
             self.scroll += 1;
@@ -273,6 +281,9 @@ impl MainView {
     }
 
     pub fn push(&mut self, ch: char) {
+        if self.content.is_empty() {
+            self.content.push(String::new());
+        }
         self.content[self.curr_line].insert(self.curr_idx, ch);
         self.curr_idx += 1;
     }
@@ -348,5 +359,17 @@ impl MainView {
         if self.curr_idx < self.content[self.curr_line].len() {
             self.curr_idx += 1;
         }
+    }
+
+    pub fn flatten(&self) -> String {
+        self.content
+            .iter()
+            .fold(String::new(), |init: String, line| {
+                if init.is_empty() {
+                    line.to_string()
+                } else {
+                    format!("{}\n{}", init, line)
+                }
+            })
     }
 }
