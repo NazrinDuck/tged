@@ -1,3 +1,4 @@
+use crate::settings::Settings;
 use crate::terminal::term::Term;
 use crate::FileMod;
 use getch_rs::Key;
@@ -5,6 +6,7 @@ use std::io;
 use std::ops::{Add, Neg};
 
 pub mod bottombar;
+pub mod filetree;
 pub mod mainview;
 pub mod settings;
 pub mod topbar;
@@ -64,10 +66,11 @@ pub trait Position {
 }
 
 pub trait View: Position {
-    fn matchar(&mut self, term: &Term, file_mod: &mut FileMod, key: Key);
-    fn set_cursor(&self, term: &Term);
+    fn init(&mut self, term: &Term, file_mod: &mut FileMod, settings: &Settings);
+    fn matchar(&mut self, term: &Term, file_mod: &mut FileMod, settings: &Settings, key: Key);
+    fn set_cursor(&self, term: &Term, settings: &Settings);
     fn update(&mut self, term: &Term, file_mod: &mut FileMod);
-    fn draw(&self, term: &Term) -> io::Result<()>;
+    fn draw(&self, term: &Term, settings: &Settings) -> io::Result<()>;
 }
 
 pub trait SplitNAt {

@@ -1,6 +1,7 @@
 use crate::{
     color::{Color, Colorful},
     file::FileMod,
+    settings::Settings,
     terminal::{cursor::Cursor, term::Term},
 };
 use getch_rs::{Getch, Key};
@@ -9,7 +10,9 @@ use std::{
     io::{self, stdout, Write},
 };
 
-use crate::view::{bottombar::BottomBar, mainview::MainView, topbar::TopBar, Pos, View, ViewID};
+use crate::view::{
+    bottombar::BottomBar, filetree::FileTree, mainview::MainView, topbar::TopBar, Pos, View, ViewID,
+};
 
 pub struct Screen {
     focus: ViewID,
@@ -28,15 +31,20 @@ impl Screen {
         }
     }
 
-    pub fn init(&mut self, term: &Term, file_mod: &mut FileMod) -> io::Result<()> {
+    pub fn init(
+        &mut self,
+        term: &Term,
+        file_mod: &mut FileMod,
+        settings: &mut Settings,
+    ) -> io::Result<()> {
         let mut main_view = MainView::new();
         let mut top_bar = TopBar::new();
         let mut bottom_bar = BottomBar::new();
-        let content = file_mod.get_content();
+        let mut file_tree = FileTree::new();
 
-        main_view.init(content);
-        main_view.settings().num_offset = 5;
-        main_view.settings().is_show_num = true;
+        //main_view.init(term, file_mod, settings);
+        settings.num_offset = 5;
+        settings.is_show_num = true;
 
         //top_bar.push_str("Hello B3r");
         bottom_bar.push_str("Hello Bottom B3r");
@@ -44,6 +52,12 @@ impl Screen {
         self.register(Box::new(main_view));
         self.register(Box::new(top_bar));
         self.register(Box::new(bottom_bar));
+        self.register(Box::new(file_tree));
+
+        for (_, view) in self.view_map.iter_mut() {
+            view.init(term, file_mod, settings);
+        }
+
         self.focus = 1;
 
         //self.setting.pos = (2, 2);
@@ -79,7 +93,12 @@ impl Screen {
         self.id_cnt += 1;
     }
 
-    pub fn interact(&mut self, term: Term, file_mod: &mut FileMod) -> io::Result<()> {
+    pub fn interact(
+        &mut self,
+        term: Term,
+        file_mod: &mut FileMod,
+        settings: &Settings,
+    ) -> io::Result<()> {
         Screen::clean(&term)?;
 
         let mut cls = true;
@@ -87,17 +106,17 @@ impl Screen {
             let ch = Getch::new();
 
             if cls {
-                Screen::refresh(&term);
+                //Screen::refresh(&term);
 
                 for (id, view) in self.view_map.iter_mut() {
                     view.update(&term, file_mod);
                     if *id != self.focus {
-                        view.draw(&term)?;
+                        view.draw(&term, settings)?;
                     }
                 }
                 let main_view = self.view_map.get_mut(&self.focus).unwrap();
-                main_view.draw(&term)?;
-                main_view.set_cursor(&term);
+                main_view.draw(&term, settings)?;
+                main_view.set_cursor(&term, settings);
             }
             let main_view = self.view_map.get_mut(&self.focus).unwrap();
             stdout().flush()?;
@@ -143,7 +162,7 @@ impl Screen {
 
                 // measure input key
                 Ok(key) => {
-                    main_view.matchar(&term, file_mod, key);
+                    main_view.matchar(&term, file_mod, settings, key);
                 }
                 Err(e) => panic!("{}", e),
             }

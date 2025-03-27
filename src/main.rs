@@ -1,12 +1,14 @@
 use clap::Parser;
 use file::FileMod;
 use screen::Screen;
+use settings::Settings;
 use terminal::{cursor::Cursor, term::Term};
 use view::Pos;
 
 mod color;
 mod file;
 mod macros;
+mod prelude;
 mod screen;
 mod settings;
 mod terminal;
@@ -21,7 +23,7 @@ mod view;
 *       View
 */
 
-use crate::view::settings::Settings;
+//use crate::view::settings::Settings;
 use tged::view;
 
 #[derive(Parser)]
@@ -42,10 +44,11 @@ fn main() -> std::io::Result<()> {
     term.init();
 
     let mut screen = Screen::new();
+    let mut settings = Settings::default();
 
-    screen.init(&term, &mut file_mod);
+    screen.init(&term, &mut file_mod, &mut settings)?;
 
     // start interact
-    screen.interact(term, &mut file_mod)?;
+    screen.interact(term, &mut file_mod, &mut settings)?;
     Ok(())
 }

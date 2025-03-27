@@ -5,15 +5,20 @@ use std::io::{self, BufReader, Read, Seek, Write};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
+use clap::builder::IntoResettable;
+
 type FileID = usize;
 
 #[derive(Debug)]
 pub struct FileBuf {
     name: String,
     file: File,
+    dirty: bool,
+    pos: (usize, usize),
+    scroll: usize,
     pathbuf: PathBuf,
     metadata: Metadata,
-    buffer: String,
+    buffer: Vec<u8>,
 }
 
 impl FileBuf {
@@ -38,34 +43,55 @@ impl FileBuf {
         };
 
         let pathbuf = fs::canonicalize(path)?;
-        let mut buffer = String::new();
+        let mut buffer = Vec::new();
 
         let mut buf_reader = BufReader::new(&file);
-        buf_reader.read_to_string(&mut buffer)?;
+        buf_reader.read_to_end(&mut buffer)?;
 
         Ok(FileBuf {
             name,
             file,
+            dirty: false,
+            pos: (0, 0),
+            scroll: 0,
             pathbuf,
             metadata,
             buffer,
         })
     }
 
-    fn sync(&mut self) {}
-
-    fn content(&self) -> &String {
-        &self.buffer
+    pub fn name(&self) -> &str {
+        self.pathbuf.file_name().unwrap().to_str().unwrap()
     }
 
-    fn save(&mut self, content: String) -> io::Result<()> {
+    fn sync(&mut self) -> io::Result<()> {
         self.file.rewind()?;
-        self.file.write_all(content.as_bytes())?;
+        self.file.write_all(&self.buffer)?;
         Ok(())
     }
 
-    fn name(&self) -> &String {
-        &self.name
+    fn content(&self) -> &Vec<u8> {
+        &self.buffer
+    }
+
+    fn write(&mut self, content: String) {
+        self.buffer = content.into();
+    }
+
+    fn save(&mut self, content: String) -> io::Result<()> {
+        self.write(content);
+        self.sync()?;
+        Ok(())
+    }
+
+    fn save_status(&mut self, pos: (usize, usize), scroll: usize) {
+        self.pos = pos;
+        self.scroll = scroll;
+    }
+
+    fn get_status(&self) -> (usize, usize, usize) {
+        let (x, y) = self.pos;
+        (x, y, self.scroll)
     }
 
     fn file_size(&self) -> u64 {
@@ -78,15 +104,30 @@ pub struct FileMod {
     file_map: HashMap<FileID, FileBuf>,
     file_cnt: FileID,
     curr_file: Option<FileID>,
+    curr_dir: PathBuf,
 }
 
 impl FileMod {
     pub fn new() -> Self {
+        let curr_dir = fs::canonicalize(PathBuf::from(".")).unwrap();
         FileMod {
             file_map: HashMap::new(),
-            file_cnt: 0,
+            file_cnt: 1,
             curr_file: None,
+            curr_dir,
         }
+    }
+
+    pub fn to_vec(&self) -> Vec<(&FileID, &FileBuf)> {
+        self.file_map.iter().collect::<Vec<(&FileID, &FileBuf)>>()
+    }
+
+    pub fn curr_id(&self) -> FileID {
+        self.curr_file.unwrap_or(0)
+    }
+
+    pub fn curr_dir(&self) -> &PathBuf {
+        &self.curr_dir
     }
 
     pub fn insert(&mut self, file_buf: FileBuf) {
@@ -105,13 +146,17 @@ impl FileMod {
         self.file_map.get(&curr).unwrap()
     }
 
-    pub fn get_content(&self) -> &String {
+    pub fn get_content(&self) -> &Vec<u8> {
         self.curr().content()
     }
 
     pub fn save(&mut self, content: String) -> io::Result<()> {
         self.mut_curr().save(content)?;
         Ok(())
+    }
+
+    pub fn write(&mut self, content: String) {
+        self.mut_curr().write(content);
     }
 
     pub fn name(&self) -> &String {
@@ -125,16 +170,19 @@ impl FileMod {
             .collect::<Vec<&String>>()
     }
 
-    pub fn shift(&mut self) {
+    pub fn shift(&mut self, pos: (usize, usize), scroll: usize) -> (usize, usize, usize) {
+        self.mut_curr().save_status(pos, scroll);
         let mut curr_file = self.curr_file.unwrap();
-        curr_file = (curr_file + 1) % self.file_cnt;
+        curr_file = curr_file % (self.file_cnt - 1) + 1;
         self.curr_file = Some(curr_file);
+        self.file_map.get(&curr_file).unwrap().get_status()
     }
 }
 
 impl From<Vec<String>> for FileMod {
     fn from(names: Vec<String>) -> Self {
-        let mut file_cnt: FileID = 0;
+        let curr_dir = fs::canonicalize(PathBuf::from(".")).unwrap();
+        let mut file_cnt: FileID = 1;
         let mut file_map = HashMap::new();
         for name in names {
             let file_buf = FileBuf::new(name).unwrap();
@@ -145,7 +193,8 @@ impl From<Vec<String>> for FileMod {
         FileMod {
             file_map,
             file_cnt,
-            curr_file: Some(0),
+            curr_file: Some(1),
+            curr_dir,
         }
     }
 }

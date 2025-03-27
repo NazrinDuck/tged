@@ -1,10 +1,12 @@
-use super::{settings::Settings, Pos, SplitNAt, View, ViewID};
+use super::{Pos, SplitNAt, View, ViewID};
 use getch_rs::Key;
+use std::fmt::format;
 use std::io::{self, Write};
 use tged::view;
 
 use crate::color::{Color, Colorful};
 use crate::rprintln;
+use crate::settings::Settings;
 use crate::{
     terminal::{cursor::Cursor, term::Term},
     view::Position,
@@ -12,25 +14,29 @@ use crate::{
 };
 
 #[view]
-#[start=(5, 2)]
+#[start=(26, 2)]
 #[end=(-1, -2)]
 #[bcolor=(0x20, 0x20, 0x20)]
 #[fcolor=(0xa0, 0xa0, 0xa0)]
 pub struct MainView {
+    //line number's color
+    lnum_clr: Color,
+    //line number's stressed color
+    lnum_sclr: Color,
     curr_line: usize,
     curr_idx: usize,
     content: Vec<String>,
     scroll: usize,
     prior: u8,
-    settings: Settings,
+    //settings: Settings,
 }
 
 impl View for MainView {
     fn update(&mut self, _: &Term, _: &mut FileMod) {}
-    fn matchar(&mut self, term: &Term, file_mod: &mut FileMod, key: Key) {
+    fn matchar(&mut self, term: &Term, file_mod: &mut FileMod, settings: &Settings, key: Key) {
         match key {
             Key::Char('\r') => {
-                self.push_line(term);
+                self.push_line(term, settings);
             }
             Key::Char('\t') => {
                 self.push_str("    ");
@@ -42,14 +48,14 @@ impl View for MainView {
                 file_mod.save(self.flatten()).unwrap();
             }
             Key::Delete => {
-                self.delete(term);
+                self.delete(term, settings);
             }
             Key::Up => {
-                self.up(term);
+                self.up(term, settings);
             }
 
             Key::Down => {
-                self.down(term);
+                self.down(term, settings);
             }
 
             Key::Left => {
@@ -61,8 +67,11 @@ impl View for MainView {
             }
 
             Key::F(6) => {
-                file_mod.shift();
-                self.sync(file_mod).unwrap();
+                file_mod.write(self.flatten());
+                let curr_pos = (self.curr_idx, self.curr_line);
+                let scroll = self.scroll;
+                let new_status = file_mod.shift(curr_pos, scroll);
+                self.sync(file_mod, new_status).unwrap();
             }
 
             other => {
@@ -71,11 +80,11 @@ impl View for MainView {
         }
     }
 
-    fn set_cursor(&self, term: &Term) {
+    fn set_cursor(&self, term: &Term, settings: &Settings) {
         let (curr_line, idx) = (self.curr_line, self.curr_idx);
 
-        let max = self.get_vpos_max(term);
-        let (mut csr_x, mut csr_y): (u16, u16) = self.get_text_pos(term);
+        let max = self.get_vpos_max(term, settings);
+        let (mut csr_x, mut csr_y): (u16, u16) = self.get_text_pos(term, settings);
 
         csr_x += (idx % max) as u16;
 
@@ -96,7 +105,7 @@ impl View for MainView {
         Cursor::set_csr(csr_x, csr_y);
     }
 
-    fn draw(&self, term: &Term) -> io::Result<()> {
+    fn draw(&self, term: &Term, settings: &Settings) -> io::Result<()> {
         self.refresh(term);
 
         let (x_pos, y_pos) = self.get_pos(term);
@@ -104,8 +113,8 @@ impl View for MainView {
         let height = self.end.1.unwrap(term.height);
         let width = self.end.0.unwrap(term.width);
 
-        let is_show_num = self.settings.is_show_num;
-        let line_num_offset = self.settings.num_offset;
+        let is_show_num = settings.is_show_num;
+        let line_num_offset = settings.num_offset;
 
         let mut line_num = self.scroll + 1;
 
@@ -113,6 +122,7 @@ impl View for MainView {
         let max_height = (height - y_pos) as usize;
 
         let (bclr, fclr) = (&self.bcolor, &self.fcolor);
+        let (lnum_clr, lnum_sclr) = (&self.lnum_clr, &self.lnum_sclr);
 
         Cursor::set_csr(x_pos, y_pos);
 
@@ -121,18 +131,35 @@ impl View for MainView {
             let mut lines: Vec<String> = Vec::new();
             for (subline, cnt) in line.splitn_at(max_line as usize) {
                 if is_show_num {
-                    if cnt == 0 {
-                        lines.push(format!(
-                            "{:>width$}│{subline}",
+                    let mut number = if cnt == 0 {
+                        format!(
+                            "{:>width$}│",
                             line_num,
                             width = (line_num_offset - 1) as usize
-                        ));
+                        )
                     } else {
-                        lines.push(format!(
-                            "{width}│{subline}",
-                            width = " ".repeat((line_num_offset - 1) as usize)
-                        ));
-                    }
+                        " ".repeat((line_num_offset - 1) as usize) + "│"
+                    };
+
+                    let subline = if line_num == self.curr_line + 1 {
+                        number = number.fcolor(lnum_sclr).bold();
+                        format!("{:<width$}", subline, width = (max_line) as usize)
+                            .color(&bclr.lighten(0x6), fclr)
+                    } else {
+                        number = number.fcolor(lnum_clr);
+                        subline.color(bclr, fclr)
+                    };
+
+                    lines.push(format!("{number}{subline}"));
+                    /*
+                    lines.push(format!(
+                        "{:>width$}│{subline}",
+                        line_num,
+                        width = (line_num_offset - 1) as usize
+                    ));
+                    */
+                    /*
+                     */
                 } else {
                     lines.push(subline);
                 }
@@ -140,7 +167,17 @@ impl View for MainView {
 
             for subline in lines {
                 Cursor::csr_setcol(x_pos);
-                print!("{}", subline.color(bclr, fclr));
+                let subline = if line_num == self.curr_line + 1 {
+                    format!(
+                        "{:<width$}",
+                        subline,
+                        width = (max_line + line_num_offset) as usize
+                    )
+                    .color(&bclr.lighten(0x6), fclr)
+                } else {
+                    subline.color(bclr, fclr)
+                };
+                print!("{}", subline);
                 height_cnt += 1;
                 if height_cnt > max_height {
                     break 'out;
@@ -148,69 +185,48 @@ impl View for MainView {
                 Cursor::csr_nextline();
             }
             line_num += 1;
-
-            /*
-            if height_cnt > max_height {
-                break;
-            }
-
-            if is_show_num {
-                Cursor::csr_setcol(x_pos);
-                print!(
-                    "{:>width$}│",
-                    line_num,
-                    width = (line_num_offset - 1) as usize
-                );
-            }
-
-            if line.len() as u16 > max_line {
-                for (subline, cnt) in line.splitn_at(max_line as usize) {
-                    if height_cnt > max_height {
-                        break;
-                    }
-
-                    if is_show_num && cnt >= 1 {
-                        Cursor::csr_setcol(x_pos);
-                        print!("{:>width$}", "│", width = line_num_offset as usize);
-                    }
-
-                    Cursor::csr_setcol(x_pos + line_num_offset);
-                    println!("{}", subline);
-                    height_cnt += 1;
-                }
-            } else {
-                Cursor::csr_setcol(x_pos + line_num_offset);
-                println!("{}", line);
-                height_cnt += 1;
-            }
-            line_num += 1;
-            */
         }
         io::stdout().flush()?;
         Ok(())
     }
-}
 
-impl MainView {
-    pub fn init(&mut self, content: &str) {
+    fn init(&mut self, _: &Term, file_mod: &mut FileMod, settings: &Settings) {
+        let content = String::from_utf8_lossy(file_mod.get_content());
         for line in content.lines() {
             self.content.push(line.to_string());
         }
+        let (bclr, fclr) = (&settings.theme.normal_bclr, &settings.theme.normal_fclr);
+        let (lnum_clr, lnum_sclr) = (&settings.theme.weak_fclr, &settings.theme.yellow);
+        self.bcolor = bclr.clone();
+        self.fcolor = fclr.clone();
+        self.lnum_clr = lnum_clr.clone();
+        self.lnum_sclr = lnum_sclr.clone();
     }
+}
 
-    pub fn sync(&mut self, file_mod: &mut FileMod) -> io::Result<()> {
-        let content = file_mod.get_content();
+impl MainView {
+    pub fn sync(
+        &mut self,
+        file_mod: &mut FileMod,
+        new_pos: (usize, usize, usize),
+    ) -> io::Result<()> {
+        let content = String::from_utf8_lossy(file_mod.get_content());
         self.content = Vec::new();
         for line in content.lines() {
             self.content.push(line.to_string());
         }
+        self.curr_idx = new_pos.0;
+        self.curr_line = new_pos.1;
+        self.scroll = new_pos.2;
         Ok(())
     }
 
+    /*
     #[inline]
     pub fn settings(&mut self) -> &mut Settings {
         &mut self.settings
     }
+    */
 
     #[inline]
     pub fn get_pos(&self, term: &Term) -> (u16, u16) {
@@ -220,25 +236,25 @@ impl MainView {
     }
 
     #[inline]
-    pub fn get_text_pos(&self, term: &Term) -> (u16, u16) {
+    pub fn get_text_pos(&self, term: &Term, settings: &Settings) -> (u16, u16) {
         let (height, width) = (term.height, term.width);
         (
-            self.start.0.unwrap(width) + self.settings.num_offset,
+            self.start.0.unwrap(width) + settings.num_offset,
             self.start.1.unwrap(height),
         )
     }
 
     #[inline]
-    fn get_vpos_max(&self, term: &Term) -> usize {
-        (self.end.0.unwrap(term.width) - self.get_text_pos(term).0) as usize
+    fn get_vpos_max(&self, term: &Term, settings: &Settings) -> usize {
+        (self.end.0.unwrap(term.width) - self.get_text_pos(term, settings).0) as usize
     }
 
     #[inline]
-    fn pre_all_lines(&self, term: &Term) -> usize {
+    fn pre_all_lines(&self, term: &Term, settings: &Settings) -> usize {
         let (curr_line, idx) = (self.curr_line, self.curr_idx);
 
         let mut line_cnt = 0;
-        let max = self.get_vpos_max(term);
+        let max = self.get_vpos_max(term, settings);
         for line in self.content.iter().take(curr_line).skip(self.scroll) {
             if line.is_empty() {
                 line_cnt += 1;
@@ -257,8 +273,8 @@ impl MainView {
     }
 
     #[inline]
-    fn line_inc(&mut self, term: &Term) {
-        let pre_all_lines = self.pre_all_lines(term);
+    fn line_inc(&mut self, term: &Term, settings: &Settings) {
+        let pre_all_lines = self.pre_all_lines(term, settings);
 
         let height = (self.end.1.unwrap(term.height) - self.start.1.unwrap(term.height)) as usize;
 
@@ -269,9 +285,9 @@ impl MainView {
     }
 
     #[inline]
-    fn line_dec(&mut self, term: &Term) {
+    fn line_dec(&mut self, term: &Term, settings: &Settings) {
         if self.scroll != 0 {
-            let pre_all_lines = self.pre_all_lines(term);
+            let pre_all_lines = self.pre_all_lines(term, settings);
 
             if pre_all_lines < 4 {
                 self.scroll -= 1;
@@ -293,7 +309,7 @@ impl MainView {
         self.curr_idx += string.len();
     }
 
-    pub fn push_line(&mut self, term: &Term) {
+    pub fn push_line(&mut self, term: &Term, settings: &Settings) {
         let (line, idx) = (self.curr_line, self.curr_idx);
 
         let content = self.content[line].clone();
@@ -302,11 +318,11 @@ impl MainView {
         self.content.insert(line + 1, String::from(last));
 
         //self.curr_line += 1;
-        self.line_inc(term);
+        self.line_inc(term, settings);
         self.curr_idx = 0;
     }
 
-    pub fn delete(&mut self, term: &Term) {
+    pub fn delete(&mut self, term: &Term, settings: &Settings) {
         let (line, idx) = (self.curr_line, self.curr_idx);
 
         if idx == 0 {
@@ -320,32 +336,32 @@ impl MainView {
             self.content[line - 1].push_str(&content[line]);
 
             self.content.remove(line);
-            self.line_dec(term);
+            self.line_dec(term, settings);
         } else {
             self.content[line].remove(idx - 1);
             self.curr_idx -= 1;
         }
     }
 
-    pub fn up(&mut self, term: &Term) {
+    pub fn up(&mut self, term: &Term, settings: &Settings) {
         let (line, idx) = (self.curr_line, self.curr_idx);
 
         if line > 0 {
             if idx > self.content[line - 1].len() {
                 self.curr_idx = self.content[line - 1].len()
             };
-            self.line_dec(term);
+            self.line_dec(term, settings);
         }
     }
 
-    pub fn down(&mut self, term: &Term) {
+    pub fn down(&mut self, term: &Term, settings: &Settings) {
         let (line, idx) = (self.curr_line, self.curr_idx);
 
         if line < self.content.len() - 1 {
             if idx > self.content[line + 1].len() {
                 self.curr_idx = self.content[line + 1].len()
             };
-            self.line_inc(term);
+            self.line_inc(term, settings);
         }
     }
 
