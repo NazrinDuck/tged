@@ -9,7 +9,7 @@ use crate::{
 use std::io::{self, Write};
 use tged::view;
 
-#[view]
+#[view("TopBar")]
 #[start=(1, 1)]
 #[end=(-1, 2)]
 #[bcolor=(0x14, 0x14, 0x14)]
@@ -19,8 +19,9 @@ pub struct TopBar {
     scolor: Color,
     // dark color  (used for background)
     dcolor: Color,
+    // dark color  (used for background)
+    green: Color,
     content: String,
-    prior: u8,
 }
 
 impl View for TopBar {
@@ -31,34 +32,44 @@ impl View for TopBar {
         self.fcolor = fclr.clone();
         self.scolor = sclr.clone();
         self.dcolor = dclr.clone();
+        self.green = settings.theme.green.clone();
     }
 
     fn update(&mut self, _: &Term, file_mod: &mut FileMod) {
         let (bclr, fclr) = (&self.bcolor, &self.fcolor);
         let dclr = &self.dcolor;
         let sclr = &self.scolor;
+        let green = &self.green;
         let curr_id = file_mod.curr_id();
         let mut content = file_mod.to_vec();
         content.sort_unstable_by_key(|x| x.0);
+
         let content: String =
             content
                 .into_iter()
                 .fold(String::new(), |init: String, (id, file_buf)| {
                     let name = file_buf.name();
+                    let dirty = if file_buf.is_dirty() {
+                        "".fcolor(green)
+                    } else {
+                        " ".to_string()
+                    };
                     let banner = if *id == curr_id {
                         format!(
                             "{}{}{}",
                             "".color(bclr, dclr),
-                            format!(" {id}.{:^12} ", name).color(dclr, sclr),
-                            "".color(bclr, dclr)
+                            //"".color(bclr, dclr),
+                            format!(" {id}.{:^12}{dirty} ", name).color(dclr, sclr),
+                            "".color(bclr, dclr) //"".color(bclr, dclr)
                         )
                     } else {
                         let clr = &dclr.darken(0x4);
                         format!(
                             "{}{}{}",
                             "".color(bclr, clr),
-                            format!(" {id}.{:^12} ", name).color(clr, fclr),
-                            "".color(bclr, clr)
+                            //"".color(bclr, dclr),
+                            format!(" {id}.{:^12}{dirty} ", name).color(clr, fclr),
+                            "".color(bclr, clr) //"".color(bclr, dclr)
                         )
                     };
                     if init.is_empty() {

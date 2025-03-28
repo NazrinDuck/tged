@@ -1,23 +1,23 @@
 use super::{Pos, SplitNAt, View, ViewID};
 use getch_rs::Key;
+use std::cell::RefCell;
 use std::fmt::format;
 use std::io::{self, Write};
+use std::rc::Rc;
 use tged::view;
 
 use crate::color::{Color, Colorful};
-use crate::rprintln;
+use crate::file::Content;
 use crate::settings::Settings;
 use crate::{
     terminal::{cursor::Cursor, term::Term},
     view::Position,
     FileMod,
 };
-
-#[view]
+#[view("MainView")]
 #[start=(26, 2)]
 #[end=(-1, -2)]
-#[bcolor=(0x20, 0x20, 0x20)]
-#[fcolor=(0xa0, 0xa0, 0xa0)]
+//#[prior = 4]
 pub struct MainView {
     //line number's color
     lnum_clr: Color,
@@ -25,12 +25,12 @@ pub struct MainView {
     lnum_sclr: Color,
     curr_line: usize,
     curr_idx: usize,
-    content: Vec<String>,
+    content: Content,
     scroll: usize,
-    prior: u8,
     //settings: Settings,
 }
 
+//#[bcolor=(0x20, 0x20, 0x20)]
 impl View for MainView {
     fn update(&mut self, _: &Term, _: &mut FileMod) {}
     fn matchar(&mut self, term: &Term, file_mod: &mut FileMod, settings: &Settings, key: Key) {
@@ -45,7 +45,7 @@ impl View for MainView {
                 self.push(char);
             }
             Key::Ctrl('s') => {
-                file_mod.save(self.flatten()).unwrap();
+                file_mod.save().unwrap();
             }
             Key::Delete => {
                 self.delete(term, settings);
@@ -67,7 +67,6 @@ impl View for MainView {
             }
 
             Key::F(6) => {
-                file_mod.write(self.flatten());
                 let curr_pos = (self.curr_idx, self.curr_line);
                 let scroll = self.scroll;
                 let new_status = file_mod.shift(curr_pos, scroll);
@@ -82,13 +81,14 @@ impl View for MainView {
 
     fn set_cursor(&self, term: &Term, settings: &Settings) {
         let (curr_line, idx) = (self.curr_line, self.curr_idx);
+        let content = self.content.borrow();
 
         let max = self.get_vpos_max(term, settings);
         let (mut csr_x, mut csr_y): (u16, u16) = self.get_text_pos(term, settings);
 
         csr_x += (idx % max) as u16;
 
-        for line in self.content.iter().take(curr_line).skip(self.scroll) {
+        for line in content.iter().take(curr_line).skip(self.scroll) {
             if line.is_empty() {
                 csr_y += 1;
                 continue;
@@ -107,6 +107,7 @@ impl View for MainView {
 
     fn draw(&self, term: &Term, settings: &Settings) -> io::Result<()> {
         self.refresh(term);
+        let content = self.content.borrow();
 
         let (x_pos, y_pos) = self.get_pos(term);
 
@@ -127,7 +128,7 @@ impl View for MainView {
         Cursor::set_csr(x_pos, y_pos);
 
         let mut height_cnt = 1;
-        'out: for line in self.content.iter().skip(self.scroll) {
+        'out: for line in content.iter().skip(self.scroll) {
             let mut lines: Vec<String> = Vec::new();
             for (subline, cnt) in line.splitn_at(max_line as usize) {
                 if is_show_num {
@@ -158,8 +159,6 @@ impl View for MainView {
                         width = (line_num_offset - 1) as usize
                     ));
                     */
-                    /*
-                     */
                 } else {
                     lines.push(subline);
                 }
@@ -191,10 +190,14 @@ impl View for MainView {
     }
 
     fn init(&mut self, _: &Term, file_mod: &mut FileMod, settings: &Settings) {
+        /*
         let content = String::from_utf8_lossy(file_mod.get_content());
         for line in content.lines() {
             self.content.push(line.to_string());
         }
+        */
+        self.content = Rc::clone(file_mod.get_content());
+
         let (bclr, fclr) = (&settings.theme.normal_bclr, &settings.theme.normal_fclr);
         let (lnum_clr, lnum_sclr) = (&settings.theme.weak_fclr, &settings.theme.yellow);
         self.bcolor = bclr.clone();
@@ -208,25 +211,14 @@ impl MainView {
     pub fn sync(
         &mut self,
         file_mod: &mut FileMod,
-        new_pos: (usize, usize, usize),
+        new_status: (usize, usize, usize),
     ) -> io::Result<()> {
-        let content = String::from_utf8_lossy(file_mod.get_content());
-        self.content = Vec::new();
-        for line in content.lines() {
-            self.content.push(line.to_string());
-        }
-        self.curr_idx = new_pos.0;
-        self.curr_line = new_pos.1;
-        self.scroll = new_pos.2;
+        self.content = Rc::clone(file_mod.get_content());
+        self.curr_idx = new_status.0;
+        self.curr_line = new_status.1;
+        self.scroll = new_status.2;
         Ok(())
     }
-
-    /*
-    #[inline]
-    pub fn settings(&mut self) -> &mut Settings {
-        &mut self.settings
-    }
-    */
 
     #[inline]
     pub fn get_pos(&self, term: &Term) -> (u16, u16) {
@@ -252,10 +244,11 @@ impl MainView {
     #[inline]
     fn pre_all_lines(&self, term: &Term, settings: &Settings) -> usize {
         let (curr_line, idx) = (self.curr_line, self.curr_idx);
+        let content = self.content.borrow();
 
         let mut line_cnt = 0;
         let max = self.get_vpos_max(term, settings);
-        for line in self.content.iter().take(curr_line).skip(self.scroll) {
+        for line in content.iter().take(curr_line).skip(self.scroll) {
             if line.is_empty() {
                 line_cnt += 1;
                 continue;
@@ -296,32 +289,40 @@ impl MainView {
         self.curr_line -= 1;
     }
 
+    #[inline]
     pub fn push(&mut self, ch: char) {
-        if self.content.is_empty() {
-            self.content.push(String::new());
+        let mut content = self.content.borrow_mut();
+        if content.is_empty() {
+            content.push(String::new());
         }
-        self.content[self.curr_line].insert(self.curr_idx, ch);
+        content[self.curr_line].insert(self.curr_idx, ch);
         self.curr_idx += 1;
     }
 
+    #[inline]
     pub fn push_str(&mut self, string: &str) {
-        self.content[self.curr_line].insert_str(self.curr_idx, string);
+        let mut content = self.content.borrow_mut();
+        content[self.curr_line].insert_str(self.curr_idx, string);
         self.curr_idx += string.len();
     }
 
+    #[inline]
     pub fn push_line(&mut self, term: &Term, settings: &Settings) {
         let (line, idx) = (self.curr_line, self.curr_idx);
+        let mut content = self.content.borrow_mut();
 
-        let content = self.content[line].clone();
-        let (first, last) = content.split_at(idx);
-        self.content[line] = String::from(first);
-        self.content.insert(line + 1, String::from(last));
+        let curr_line = content[line].clone();
+        let (first, last) = curr_line.split_at(idx);
+        content[line] = String::from(first);
+        content.insert(line + 1, String::from(last));
+        drop(content);
 
         //self.curr_line += 1;
         self.line_inc(term, settings);
         self.curr_idx = 0;
     }
 
+    #[inline]
     pub fn delete(&mut self, term: &Term, settings: &Settings) {
         let (line, idx) = (self.curr_line, self.curr_idx);
 
@@ -330,62 +331,74 @@ impl MainView {
                 return;
             }
 
-            let content = self.content.clone();
+            let content = self.content.borrow().clone();
+            let mut content_mut = self.content.borrow_mut();
 
             self.curr_idx = content[line - 1].len();
-            self.content[line - 1].push_str(&content[line]);
+            content_mut[line - 1].push_str(&content[line]);
 
-            self.content.remove(line);
+            content_mut.remove(line);
+            drop(content_mut);
+
             self.line_dec(term, settings);
         } else {
-            self.content[line].remove(idx - 1);
+            self.content.borrow_mut()[line].remove(idx - 1);
             self.curr_idx -= 1;
         }
     }
 
+    #[inline]
     pub fn up(&mut self, term: &Term, settings: &Settings) {
         let (line, idx) = (self.curr_line, self.curr_idx);
 
         if line > 0 {
-            if idx > self.content[line - 1].len() {
-                self.curr_idx = self.content[line - 1].len()
+            let content = self.content.borrow();
+            if idx > content[line - 1].len() {
+                self.curr_idx = content[line - 1].len()
             };
+            drop(content);
             self.line_dec(term, settings);
         }
     }
 
+    #[inline]
     pub fn down(&mut self, term: &Term, settings: &Settings) {
         let (line, idx) = (self.curr_line, self.curr_idx);
 
-        if line < self.content.len() - 1 {
-            if idx > self.content[line + 1].len() {
-                self.curr_idx = self.content[line + 1].len()
+        let content = self.content.borrow();
+        if line < content.len() - 1 {
+            if idx > content[line + 1].len() {
+                self.curr_idx = content[line + 1].len()
             };
+            drop(content);
             self.line_inc(term, settings);
         }
     }
 
+    #[inline]
     pub fn left(&mut self) {
         if self.curr_idx > 0 {
-            self.curr_idx -= 1;
+            let mut idx = self.curr_idx - 1;
+            /*
+            while idx > 0 && !self.content.borrow()[self.curr_line].is_char_boundary(idx) {
+                idx -= 1;
+            }
+            */
+            self.curr_idx = idx;
         }
     }
 
+    #[inline]
     pub fn right(&mut self) {
-        if self.curr_idx < self.content[self.curr_line].len() {
-            self.curr_idx += 1;
+        let max = self.content.borrow()[self.curr_line].len();
+        if self.curr_idx < max {
+            let mut idx = self.curr_idx + 1;
+            /*
+            while idx < max && !self.content.borrow()[self.curr_line].is_char_boundary(idx) {
+                idx += 1;
+            }
+            */
+            self.curr_idx = idx;
         }
-    }
-
-    pub fn flatten(&self) -> String {
-        self.content
-            .iter()
-            .fold(String::new(), |init: String, line| {
-                if init.is_empty() {
-                    line.to_string()
-                } else {
-                    format!("{}\n{}", init, line)
-                }
-            })
     }
 }

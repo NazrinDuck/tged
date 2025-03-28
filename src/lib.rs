@@ -9,7 +9,7 @@ use std::str::FromStr;
 use syn::spanned::Spanned;
 use syn::{
     parenthesized, parse_macro_input, Attribute, Data, DeriveInput, Error, Expr, ExprArray,
-    ExprLit, Fields, Ident, Meta, Type, UnOp,
+    ExprGroup, ExprLit, ExprTuple, Fields, Ident, Lit, Meta, Stmt, Type, UnOp,
 };
 
 ///
@@ -20,6 +20,13 @@ use syn::{
 #[proc_macro_attribute]
 pub fn view(attr: TokenStream, item: TokenStream) -> TokenStream {
     let input = parse_macro_input!(item as DeriveInput);
+    dbg!(&attr);
+    let attr = parse_macro_input!(attr as Lit);
+
+    let name_field = match parse_view_attr(attr) {
+        Ok(init) => init,
+        Err(err) => return Error::into_compile_error(err).into(),
+    };
 
     let pos_fields = match parse_attrs(input.attrs) {
         Ok(init) => init,
@@ -112,6 +119,7 @@ pub fn view(attr: TokenStream, item: TokenStream) -> TokenStream {
         #[inline]
         pub fn new() -> Self {
             #name {
+                #name_field
                 id: 0,
                 #pos_fields
                 #default_fields
@@ -141,6 +149,7 @@ pub fn view(attr: TokenStream, item: TokenStream) -> TokenStream {
     let expanded = quote! {
         #[derive(Debug)]
         #vis struct #name {
+            name: String,
             id: ViewID,
             start: (Pos, Pos),
             end: (Pos, Pos),
@@ -155,6 +164,13 @@ pub fn view(attr: TokenStream, item: TokenStream) -> TokenStream {
     };
     TokenStream::from(expanded)
     //output
+}
+
+fn parse_view_attr(attr: Lit) -> syn::Result<TokenStream2> {
+    match attr {
+        Lit::Str(string) => Ok(quote! {name: String::from(#string),}),
+        other => Err(Error::new_spanned(other, "expected string literal")),
+    }
 }
 
 fn parse_attrs(attrs: Vec<Attribute>) -> syn::Result<TokenStream2> {
@@ -260,7 +276,25 @@ fn parse_attrs(attrs: Vec<Attribute>) -> syn::Result<TokenStream2> {
             continue;
         }
 
+        // start/end part is necessary
+
         return Err(Error::new_spanned(attr, "unrecognized ident"));
+    }
+    if !start {
+        return Err(Error::new_spanned(0, "expected `start`"));
+    }
+
+    if !end {
+        return Err(Error::new_spanned(0, "expected `end`"));
+    }
+
+    // bcolor/fcolor part can be left empty
+    if !bcolor {
+        result.push(quote! { bcolor: Color::new(0, 0, 0), });
+    }
+
+    if !fcolor {
+        result.push(quote! { fcolor: Color::new(0xff, 0xff, 0xff), });
     }
 
     Ok(quote! { #(#result)* })

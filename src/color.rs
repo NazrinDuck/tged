@@ -13,6 +13,8 @@ pub trait Colorful {
     fn color(&self, bclr: &Color, fclr: &Color) -> String;
     fn fcolor(&self, clr: &Color) -> String;
     fn bcolor(&self, clr: &Color) -> String;
+    fn fclr_head(&self, clr: &Color) -> String;
+    fn bclr_head(&self, clr: &Color) -> String;
     fn bold(&self) -> String;
 }
 
@@ -30,6 +32,14 @@ impl Colorful for String {
 
     fn fcolor(&self, clr: &Color) -> String {
         format!("\x1b[38;2;{};{};{}m{self}{}", clr.r, clr.g, clr.b, END)
+    }
+
+    fn bclr_head(&self, clr: &Color) -> String {
+        format!("\x1b[48;2;{};{};{}m{self}", clr.r, clr.g, clr.b)
+    }
+
+    fn fclr_head(&self, clr: &Color) -> String {
+        format!("\x1b[38;2;{};{};{}m{self}", clr.r, clr.g, clr.b)
     }
 
     fn bold(&self) -> String {
@@ -53,6 +63,14 @@ impl Colorful for str {
         format!("\x1b[38;2;{};{};{}m{self}{}", clr.r, clr.g, clr.b, END)
     }
 
+    fn bclr_head(&self, clr: &Color) -> String {
+        format!("\x1b[48;2;{};{};{}m{self}", clr.r, clr.g, clr.b)
+    }
+
+    fn fclr_head(&self, clr: &Color) -> String {
+        format!("\x1b[38;2;{};{};{}m{self}", clr.r, clr.g, clr.b)
+    }
+
     fn bold(&self) -> String {
         format!("\x1b[1m{self}{}", END)
     }
@@ -71,13 +89,6 @@ impl Color {
         format!("\x1b[48;2;{};{};{}m", self.r, self.g, self.b)
     }
 
-    pub fn from_hex(hex: u32) -> Result<Self, Box<dyn Error>> {
-        let r: u8 = ((hex & 0xff0000) >> 16).try_into()?;
-        let g: u8 = ((hex & 0xff00) >> 8).try_into()?;
-        let b: u8 = (hex & 0xff).try_into()?;
-        Ok(Color { r, g, b })
-    }
-
     pub fn darken(&self, val: u8) -> Color {
         let (r, g, b) = (self.r, self.g, self.b);
         Color {
@@ -94,5 +105,14 @@ impl Color {
             g: g + val,
             b: b + val,
         }
+    }
+}
+
+impl From<u32> for Color {
+    fn from(value: u32) -> Self {
+        let r: u8 = ((value & 0xff0000) >> 16).try_into().unwrap();
+        let g: u8 = ((value & 0xff00) >> 8).try_into().unwrap();
+        let b: u8 = (value & 0xff).try_into().unwrap();
+        Color { r, g, b }
     }
 }

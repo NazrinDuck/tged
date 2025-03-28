@@ -2,8 +2,8 @@ use clap::Parser;
 use file::FileMod;
 use screen::Screen;
 use settings::Settings;
-use terminal::{cursor::Cursor, term::Term};
-use view::Pos;
+use std::io::{self, IsTerminal};
+use terminal::term::Term;
 
 mod color;
 mod file;
@@ -24,10 +24,10 @@ mod view;
 */
 
 //use crate::view::settings::Settings;
-use tged::view;
 
 #[derive(Parser)]
 #[command(version = "0.1.0",author = "NazrinDuck", about, long_about = None)]
+
 pub struct Args {
     pub files_name: Vec<String>,
 
@@ -35,16 +35,19 @@ pub struct Args {
     pub debug: u8,
 }
 
-fn main() -> std::io::Result<()> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    if !io::stdout().is_terminal() {
+        return Err("Please use in terminal/tty!".into());
+    }
+
     let args = Args::parse();
 
     let mut file_mod = FileMod::from(args.files_name);
-
     let mut term = Term::new();
-    term.init();
-
-    let mut screen = Screen::new();
     let mut settings = Settings::default();
+    let mut screen = Screen::new();
+
+    term.init();
 
     screen.init(&term, &mut file_mod, &mut settings)?;
 

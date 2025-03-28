@@ -1,13 +1,15 @@
 use std::cell::RefCell;
+use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
 use std::fs::{self, File, Metadata, OpenOptions};
+use std::hash::{Hash, Hasher};
 use std::io::{self, BufReader, Read, Seek, Write};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use std::time::SystemTime;
 
-use clap::builder::IntoResettable;
-
-type FileID = usize;
+pub(crate) type FileID = usize;
+pub(crate) type Content = Rc<RefCell<Vec<String>>>;
 
 #[derive(Debug)]
 pub struct FileBuf {
@@ -18,7 +20,8 @@ pub struct FileBuf {
     scroll: usize,
     pathbuf: PathBuf,
     metadata: Metadata,
-    buffer: Vec<u8>,
+    content: Content,
+    copies: Vec<u8>,
 }
 
 impl FileBuf {
@@ -43,10 +46,18 @@ impl FileBuf {
         };
 
         let pathbuf = fs::canonicalize(path)?;
-        let mut buffer = Vec::new();
+        let name = pathbuf.file_name().unwrap().to_str().unwrap().to_string();
 
         let mut buf_reader = BufReader::new(&file);
-        buf_reader.read_to_end(&mut buffer)?;
+        let mut buf = String::new();
+        buf_reader.read_to_string(&mut buf)?;
+
+        let content = buf
+            .split('\n')
+            .map(|s| s.to_string())
+            .collect::<Vec<String>>();
+        let content = Rc::new(RefCell::new(content));
+        let copies = buf.into_bytes();
 
         Ok(FileBuf {
             name,
@@ -56,31 +67,59 @@ impl FileBuf {
             scroll: 0,
             pathbuf,
             metadata,
-            buffer,
+            content,
+            copies,
         })
     }
 
+    #[inline]
     pub fn name(&self) -> &str {
-        self.pathbuf.file_name().unwrap().to_str().unwrap()
+        &self.name
+    }
+
+    #[inline]
+    pub fn file_size(&self) -> u64 {
+        self.metadata.len()
+    }
+
+    #[inline]
+    pub fn file_modified(&self) -> SystemTime {
+        self.metadata.modified().unwrap()
     }
 
     fn sync(&mut self) -> io::Result<()> {
         self.file.rewind()?;
-        self.file.write_all(&self.buffer)?;
+        let mut buf = String::new();
+        let mut buf_reader = BufReader::new(&self.file);
+        buf_reader.read_to_string(&mut buf)?;
+
+        let content = buf
+            .split('\n')
+            .map(|s| s.to_string())
+            .collect::<Vec<String>>();
+        let content = Rc::new(RefCell::new(content));
+        let copies = buf.into_bytes();
+
+        self.content = content;
+        self.copies = copies;
         Ok(())
     }
 
-    fn content(&self) -> &Vec<u8> {
-        &self.buffer
+    fn content(&self) -> &Content {
+        &self.content
     }
 
-    fn write(&mut self, content: String) {
-        self.buffer = content.into();
-    }
-
-    fn save(&mut self, content: String) -> io::Result<()> {
-        self.write(content);
-        self.sync()?;
+    fn save(&mut self) -> io::Result<()> {
+        if self.dirty {
+            self.file.rewind()?;
+            let content = self.flatten();
+            self.file.write_all(&content)?;
+            self.file.set_len(content.len() as u64)?;
+            self.copies = content.clone();
+            self.file.sync_all()?;
+            self.metadata = fs::metadata(&self.pathbuf)?;
+            self.dirty = false;
+        }
         Ok(())
     }
 
@@ -94,8 +133,20 @@ impl FileBuf {
         (x, y, self.scroll)
     }
 
-    fn file_size(&self) -> u64 {
-        self.metadata.len()
+    #[inline]
+    pub fn is_dirty(&self) -> bool {
+        self.dirty
+    }
+
+    #[inline]
+    pub fn flatten(&self) -> Vec<u8> {
+        self.content
+            .borrow()
+            .iter()
+            .fold(String::new(), |init: String, line| {
+                format!("{init}\n{line}")
+            })[1..]
+            .into()
     }
 }
 
@@ -116,6 +167,19 @@ impl FileMod {
             curr_file: None,
             curr_dir,
         }
+    }
+
+    #[inline]
+    pub fn update(&mut self) -> io::Result<()> {
+        for file in self.file_map.values_mut() {
+            if file.metadata.modified()? != file.file.metadata().unwrap().modified()? {
+                file.sync()?;
+                //file.dirty = true;
+            } else {
+                file.dirty = calculate_hash(&file.flatten()) != calculate_hash(&file.copies);
+            }
+        }
+        Ok(())
     }
 
     pub fn to_vec(&self) -> Vec<(&FileID, &FileBuf)> {
@@ -146,17 +210,13 @@ impl FileMod {
         self.file_map.get(&curr).unwrap()
     }
 
-    pub fn get_content(&self) -> &Vec<u8> {
+    pub fn get_content(&self) -> &Content {
         self.curr().content()
     }
 
-    pub fn save(&mut self, content: String) -> io::Result<()> {
-        self.mut_curr().save(content)?;
+    pub fn save(&mut self) -> io::Result<()> {
+        self.mut_curr().save()?;
         Ok(())
-    }
-
-    pub fn write(&mut self, content: String) {
-        self.mut_curr().write(content);
     }
 
     pub fn name(&self) -> &String {
@@ -170,6 +230,7 @@ impl FileMod {
             .collect::<Vec<&String>>()
     }
 
+    #[inline]
     pub fn shift(&mut self, pos: (usize, usize), scroll: usize) -> (usize, usize, usize) {
         self.mut_curr().save_status(pos, scroll);
         let mut curr_file = self.curr_file.unwrap();
@@ -197,4 +258,11 @@ impl From<Vec<String>> for FileMod {
             curr_dir,
         }
     }
+}
+
+#[inline]
+fn calculate_hash<T: Hash>(t: &T) -> u64 {
+    let mut s = DefaultHasher::new();
+    t.hash(&mut s);
+    s.finish()
 }

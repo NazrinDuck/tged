@@ -47,7 +47,7 @@ impl Screen {
         settings.is_show_num = true;
 
         //top_bar.push_str("Hello B3r");
-        bottom_bar.push_str("Hello Bottom B3r");
+        //bottom_bar.push_str("Hello Bottom B3r");
 
         self.register(Box::new(main_view));
         self.register(Box::new(top_bar));
@@ -93,6 +93,10 @@ impl Screen {
         self.id_cnt += 1;
     }
 
+    fn shift(&mut self) {
+        self.focus = self.focus % (self.id_cnt - 1) + 1;
+    }
+
     pub fn interact(
         &mut self,
         term: Term,
@@ -126,6 +130,10 @@ impl Screen {
                 // press ESC to leave
                 Ok(Key::Esc) => break,
 
+                Ok(Key::F(5)) => {
+                    self.shift();
+                }
+
                 // reserve key F1 ~ F5 for fixed function
                 Ok(Key::F(f)) if f <= 5 => {
                     cls = false;
@@ -135,6 +143,8 @@ impl Screen {
                 // for debug
                 Ok(Key::Ctrl('d')) => {
                     cls = false;
+                    let con = &file_mod.curr().flatten();
+                    dbg!(String::from_utf8_lossy(con));
                 }
                 Ok(Key::Ctrl('k')) => {
                     cls = false;
@@ -166,6 +176,7 @@ impl Screen {
                 }
                 Err(e) => panic!("{}", e),
             }
+            file_mod.update()?;
         }
 
         Screen::clean(&term)?;

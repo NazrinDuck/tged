@@ -1,6 +1,6 @@
 use super::{Pos, View, ViewID};
 use crate::{
-    color::{Color, Colorful},
+    color::{Color, Colorful, END},
     settings::Settings,
     terminal::{cursor::Cursor, term::Term},
     view::Position,
@@ -9,25 +9,71 @@ use crate::{
 use std::io::{self, Write};
 use tged::view;
 
-#[view]
+#[view("BottomBar")]
 #[start=(1, -2)]
 #[end=(-1, -1)]
-#[bcolor=(0x10, 0x10, 0x10)]
-#[fcolor=(0x10, 0x10, 0x10)]
 pub struct BottomBar {
+    bcolor_lv1: Color,
+    fcolor_lv1: Color,
+    bcolor_lv2: Color,
+    fcolor_lv2: Color,
+
     content: String,
-    prior: u8,
 }
 
 impl View for BottomBar {
-    fn init(&mut self, term: &Term, file_mod: &mut FileMod, settings: &Settings) {}
-    fn update(&mut self, _: &Term, _: &mut FileMod) {}
+    fn init(&mut self, _: &Term, _: &mut FileMod, settings: &Settings) {
+        //let (bclr, fclr) = (&settings.theme.stress_bclr, &settings.theme.stress_fclr);
+        self.bcolor_lv1 = settings.theme.stress_fclr.clone();
+        self.fcolor_lv1 = settings.theme.normal_bclr.clone();
+        self.bcolor_lv2 = settings.theme.stress_bclr.clone();
+        self.fcolor_lv2 = settings.theme.stress_fclr.clone();
+        self.bcolor = settings.theme.black.clone();
+        self.fcolor = settings.theme.normal_fclr.clone();
+    }
+    fn update(&mut self, _: &Term, file_mod: &mut FileMod) {
+        let (bclr_lv1, fclr_lv1) = (&self.bcolor_lv1, &self.fcolor_lv1);
+        let (bclr_lv2, fclr_lv2) = (&self.bcolor_lv2, &self.fcolor_lv2);
+        let (bclr, fclr) = (&self.bcolor, &self.fcolor);
+
+        let divider_lv1 = format!(
+            "{}{}{}",
+            bclr_lv1.fclr_head(),
+            bclr_lv2.bclr_head(),
+            fclr_lv2.fclr_head()
+        );
+        let divider_lv2 = format!(
+            "{}{}{}",
+            bclr_lv2.fclr_head(),
+            bclr.bclr_head(),
+            fclr.fclr_head()
+        );
+
+        let mut content = String::new();
+        let file_size = pretty_size(file_mod);
+
+        let first_part = "TGED";
+        let second_part = file_mod.curr().name();
+        let third_part = &format!("size  {}", file_size);
+
+        let bottom_bar = format!(
+            "{}{} {first_part} {divider_lv1} {second_part} {divider_lv2} {third_part} {}",
+            bclr_lv1.bclr_head(),
+            fclr_lv1.fclr_head(),
+            END,
+        );
+
+        content.push_str(&bottom_bar);
+
+        self.content = content;
+    }
     fn matchar(&mut self, _: &Term, _: &mut FileMod, settings: &Settings, _: getch_rs::Key) {}
     fn set_cursor(&self, _: &Term, settings: &Settings) {}
     fn draw(&self, term: &Term, settings: &Settings) -> std::io::Result<()> {
+        self.refresh(term);
         let (x, y) = self.get_start(term);
         Cursor::set_csr(x, y);
-        print!("{:^width$}", self.content, width = term.width.into());
+        print!("{}", self.content);
         io::stdout().flush()?;
         Ok(())
     }
@@ -36,5 +82,16 @@ impl View for BottomBar {
 impl BottomBar {
     pub fn push_str(&mut self, string: &str) {
         self.content.push_str(string);
+    }
+}
+
+fn pretty_size(file_mod: &mut FileMod) -> String {
+    let file_size = file_mod.curr().file_size();
+    if file_size < 1000 {
+        format!("{file_size}b")
+    } else if file_size < 1000_0000 {
+        format!("{:.2}kb", file_size as f64 / 1000.0f64)
+    } else {
+        format!("{:.2}mb", file_size as f64 / 1000_0000.0f64)
     }
 }
