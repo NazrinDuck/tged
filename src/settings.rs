@@ -1,5 +1,6 @@
 use crate::color::Color;
 
+#[allow(unused)]
 pub struct Theme {
     pub stress_fclr: Color,
     pub stress_bclr: Color,

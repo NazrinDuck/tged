@@ -1,7 +1,6 @@
+use super::menu::Menu;
 use super::{Pos, SplitNAt, View, ViewID};
 use getch_rs::Key;
-use std::cell::RefCell;
-use std::fmt::format;
 use std::io::{self, Write};
 use std::rc::Rc;
 use tged::view;
@@ -15,10 +14,11 @@ use crate::{
     FileMod,
 };
 #[view("MainView")]
-#[start=(26, 2)]
+#[start=(26, 3)]
 #[end=(-1, -2)]
 //#[prior = 4]
 pub struct MainView {
+    pub menu: Menu,
     //line number's color
     lnum_clr: Color,
     //line number's stressed color
@@ -27,7 +27,6 @@ pub struct MainView {
     curr_idx: usize,
     content: Content,
     scroll: usize,
-    //settings: Settings,
 }
 
 //#[bcolor=(0x20, 0x20, 0x20)]
@@ -43,9 +42,6 @@ impl View for MainView {
             }
             Key::Char(char) => {
                 self.push(char);
-            }
-            Key::Ctrl('s') => {
-                file_mod.save().unwrap();
             }
             Key::Delete => {
                 self.delete(term, settings);
@@ -223,7 +219,6 @@ impl MainView {
     #[inline]
     pub fn get_pos(&self, term: &Term) -> (u16, u16) {
         let (height, width) = (term.height, term.width);
-        usize::default();
         (self.start.0.unwrap(width), self.start.1.unwrap(height))
     }
 

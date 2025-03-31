@@ -12,6 +12,7 @@ use tged::view;
 #[view("BottomBar")]
 #[start=(1, -2)]
 #[end=(-1, -1)]
+#[silent]
 pub struct BottomBar {
     bcolor_lv1: Color,
     fcolor_lv1: Color,

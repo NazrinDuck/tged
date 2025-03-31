@@ -3,11 +3,12 @@ use crate::terminal::term::Term;
 use crate::FileMod;
 use getch_rs::Key;
 use std::io;
-use std::ops::{Add, Neg};
+use std::ops::Add;
 
 pub mod bottombar;
 pub mod filetree;
 pub mod mainview;
+pub mod menu;
 pub mod settings;
 pub mod topbar;
 
@@ -63,6 +64,8 @@ pub trait Position {
     fn get_start(&self, term: &Term) -> (u16, u16);
     fn get_end(&self, term: &Term) -> (u16, u16);
     fn resize(&mut self, dx_s: i16, dy_s: i16, dx_e: i16, dy_e: i16);
+    fn is_silent(&self) -> bool;
+    fn is_lock(&self) -> bool;
 }
 
 pub trait View: Position {

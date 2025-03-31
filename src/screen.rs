@@ -11,7 +11,8 @@ use std::{
 };
 
 use crate::view::{
-    bottombar::BottomBar, filetree::FileTree, mainview::MainView, topbar::TopBar, Pos, View, ViewID,
+    bottombar::BottomBar, filetree::FileTree, mainview::MainView, menu::Menu, topbar::TopBar, Pos,
+    View, ViewID,
 };
 
 pub struct Screen {
@@ -37,18 +38,17 @@ impl Screen {
         file_mod: &mut FileMod,
         settings: &mut Settings,
     ) -> io::Result<()> {
-        let mut main_view = MainView::new();
-        let mut top_bar = TopBar::new();
-        let mut bottom_bar = BottomBar::new();
-        let mut file_tree = FileTree::new();
+        let main_view = MainView::new();
+        let top_bar = TopBar::new();
+        let bottom_bar = BottomBar::new();
+        let file_tree = FileTree::new();
+        //let menu = Menu::new();
 
         //main_view.init(term, file_mod, settings);
-        settings.num_offset = 5;
+        settings.num_offset = 6;
         settings.is_show_num = true;
 
-        //top_bar.push_str("Hello B3r");
-        //bottom_bar.push_str("Hello Bottom B3r");
-
+        //self.register(Box::new(main_view.menu));
         self.register(Box::new(main_view));
         self.register(Box::new(top_bar));
         self.register(Box::new(bottom_bar));
@@ -60,9 +60,7 @@ impl Screen {
 
         self.focus = 1;
 
-        //self.setting.pos = (2, 2);
         Cursor::reset_csr();
-        //term::set_csr(self.setting.pos.0, self.setting.pos.1);
         stdout().flush()?;
         Ok(())
     }
@@ -94,7 +92,11 @@ impl Screen {
     }
 
     fn shift(&mut self) {
-        self.focus = self.focus % (self.id_cnt - 1) + 1;
+        let mut new = self.focus % (self.id_cnt - 1) + 1;
+        while self.view_map.get(&new).unwrap().is_silent() {
+            new = new % (self.id_cnt - 1) + 1;
+        }
+        self.focus = new;
     }
 
     pub fn interact(
@@ -131,7 +133,9 @@ impl Screen {
                 Ok(Key::Esc) => break,
 
                 Ok(Key::F(5)) => {
-                    self.shift();
+                    if !main_view.is_lock() {
+                        self.shift();
+                    }
                 }
 
                 // reserve key F1 ~ F5 for fixed function
@@ -149,6 +153,10 @@ impl Screen {
                 Ok(Key::Ctrl('k')) => {
                     cls = false;
                     dbg!(&file_mod);
+                }
+
+                Ok(Key::Ctrl('s')) => {
+                    file_mod.save()?;
                 }
 
                 Ok(Key::Alt(key)) => {

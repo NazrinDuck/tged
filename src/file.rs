@@ -11,46 +11,104 @@ use std::time::SystemTime;
 pub(crate) type FileID = usize;
 pub(crate) type Content = Rc<RefCell<Vec<String>>>;
 
+impl From<&PathBuf> for FileBuf {
+    fn from(value: &PathBuf) -> Self {
+        let file: Option<File>;
+        let metadata: Option<Metadata>;
+        let mut open_options = OpenOptions::new();
+        let mut buf = String::new();
+        let pathbuf: PathBuf;
+
+        if !value.try_exists().unwrap() {
+            file = None;
+            metadata = None;
+            pathbuf = PathBuf::new();
+        } else {
+            let md = fs::metadata(value).unwrap();
+            let open_options = if md.permissions().readonly() {
+                open_options.read(true).write(false)
+            } else {
+                open_options.read(true).write(true)
+            };
+
+            let f = open_options.open(value).unwrap();
+
+            let mut buf_reader = BufReader::new(&f);
+            buf_reader.read_to_string(&mut buf).unwrap();
+
+            pathbuf = fs::canonicalize(value).unwrap();
+            metadata = Some(md);
+            file = Some(f);
+        };
+        let name: String = pathbuf.file_name().unwrap().to_str().unwrap().to_string();
+
+        let content = buf
+            .split('\n')
+            .map(|s| s.to_string())
+            .collect::<Vec<String>>();
+        let content = Rc::new(RefCell::new(content));
+        let copies = buf.into_bytes();
+
+        FileBuf {
+            name,
+            file,
+            dirty: false,
+            pos: (0, 0),
+            scroll: 0,
+            pathbuf,
+            metadata,
+            content,
+            copies,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct FileBuf {
     name: String,
-    file: File,
+    file: Option<File>,
     dirty: bool,
     pos: (usize, usize),
     scroll: usize,
     pathbuf: PathBuf,
-    metadata: Metadata,
+    metadata: Option<Metadata>,
     content: Content,
     copies: Vec<u8>,
 }
 
 impl FileBuf {
-    fn new(name: String) -> Result<Self, Box<dyn std::error::Error>> {
-        let path = Path::new(&name);
-        let file: File;
-        let metadata: Metadata;
+    fn new(input: String) -> Result<Self, Box<dyn std::error::Error>> {
+        let path = Path::new(&input);
+        let file: Option<File>;
+        let metadata: Option<Metadata>;
         let mut open_options = OpenOptions::new();
+        let mut buf = String::new();
+        let pathbuf: PathBuf;
+        let name: String;
 
         if !path.try_exists()? {
-            let open_options = open_options.read(true).write(true).create(true);
-            file = open_options.open(path)?;
-            metadata = fs::metadata(path)?;
+            file = None;
+            metadata = None;
+            pathbuf = PathBuf::new();
+            name = input;
         } else {
-            metadata = fs::metadata(path)?;
-            let open_options = if metadata.permissions().readonly() {
+            let md = fs::metadata(path)?;
+            let open_options = if md.permissions().readonly() {
                 open_options.read(true).write(false)
             } else {
                 open_options.read(true).write(true)
             };
-            file = open_options.open(path)?;
+
+            let f = open_options.open(path)?;
+
+            let mut buf_reader = BufReader::new(&f);
+            buf_reader.read_to_string(&mut buf)?;
+
+            pathbuf = fs::canonicalize(path)?;
+            metadata = Some(md);
+            file = Some(f);
+            name = pathbuf.file_name().unwrap().to_str().unwrap().to_string();
         };
-
-        let pathbuf = fs::canonicalize(path)?;
-        let name = pathbuf.file_name().unwrap().to_str().unwrap().to_string();
-
-        let mut buf_reader = BufReader::new(&file);
-        let mut buf = String::new();
-        buf_reader.read_to_string(&mut buf)?;
 
         let content = buf
             .split('\n')
@@ -78,30 +136,60 @@ impl FileBuf {
     }
 
     #[inline]
+    pub fn pathbuf(&self) -> &PathBuf {
+        &self.pathbuf
+    }
+
+    #[inline]
+    pub fn try_open(&mut self) -> io::Result<()> {
+        let file = OpenOptions::new().read(true).write(true).open(&self.name)?;
+        self.metadata = Some(file.metadata()?);
+        self.file = Some(file);
+        self.pathbuf = fs::canonicalize(&self.name)?;
+        self.name = self
+            .pathbuf
+            .file_name()
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_string();
+
+        Ok(())
+    }
+
+    #[inline]
     pub fn file_size(&self) -> u64 {
-        self.metadata.len()
+        match &self.metadata {
+            Some(metadata) => metadata.len(),
+            None => 0,
+        }
     }
 
     #[inline]
     pub fn file_modified(&self) -> SystemTime {
-        self.metadata.modified().unwrap()
+        match &self.metadata {
+            Some(metadata) => metadata.modified().unwrap(),
+            None => SystemTime::now(),
+        }
     }
 
     fn sync(&mut self) -> io::Result<()> {
-        self.file.rewind()?;
-        let mut buf = String::new();
-        let mut buf_reader = BufReader::new(&self.file);
-        buf_reader.read_to_string(&mut buf)?;
+        if let Some(ref mut file) = self.file {
+            file.rewind()?;
+            let mut buf = String::new();
+            let mut buf_reader = BufReader::new(file);
+            buf_reader.read_to_string(&mut buf)?;
 
-        let content = buf
-            .split('\n')
-            .map(|s| s.to_string())
-            .collect::<Vec<String>>();
-        let content = Rc::new(RefCell::new(content));
-        let copies = buf.into_bytes();
+            let content = buf
+                .split('\n')
+                .map(|s| s.to_string())
+                .collect::<Vec<String>>();
+            let content = Rc::new(RefCell::new(content));
+            let copies = buf.into_bytes();
 
-        self.content = content;
-        self.copies = copies;
+            self.content = content;
+            self.copies = copies;
+        }
         Ok(())
     }
 
@@ -110,15 +198,42 @@ impl FileBuf {
     }
 
     fn save(&mut self) -> io::Result<()> {
-        if self.dirty {
-            self.file.rewind()?;
-            let content = self.flatten();
-            self.file.write_all(&content)?;
-            self.file.set_len(content.len() as u64)?;
-            self.copies = content.clone();
-            self.file.sync_all()?;
-            self.metadata = fs::metadata(&self.pathbuf)?;
-            self.dirty = false;
+        let content = self.flatten();
+        match self.file {
+            Some(ref mut file) => {
+                if self.dirty {
+                    file.rewind()?;
+                    file.write_all(&content)?;
+                    file.set_len(content.len() as u64)?;
+                    self.copies = content.clone();
+                    file.sync_all()?;
+                    self.metadata = Some(fs::metadata(&self.pathbuf)?);
+                    self.dirty = false;
+                }
+            }
+            None => {
+                if self.name.is_empty() {
+                    todo!()
+                } else {
+                    let mut open_options = OpenOptions::new();
+                    let open_options = open_options.read(true).write(true).create(true);
+                    let mut file = open_options.open(&self.name)?;
+                    file.write_all(&content)?;
+                    self.copies = content.clone();
+                    file.sync_all()?;
+                    self.pathbuf = fs::canonicalize(&self.name)?;
+                    self.file = Some(file);
+                    self.metadata = Some(fs::metadata(&self.name)?);
+                    self.name = self
+                        .pathbuf
+                        .file_name()
+                        .unwrap()
+                        .to_str()
+                        .unwrap()
+                        .to_string();
+                    self.dirty = false;
+                }
+            }
         }
         Ok(())
     }
@@ -172,9 +287,16 @@ impl FileMod {
     #[inline]
     pub fn update(&mut self) -> io::Result<()> {
         for file in self.file_map.values_mut() {
-            if file.metadata.modified()? != file.file.metadata().unwrap().modified()? {
+            if let Some(f) = &file.file {
+                if file.file_modified() != f.metadata().unwrap().modified()? {
+                    file.sync()?;
+                    //file.dirty = true;
+                } else {
+                    file.dirty = calculate_hash(&file.flatten()) != calculate_hash(&file.copies);
+                }
+            } else if file.pathbuf().try_exists()? {
+                file.try_open()?;
                 file.sync()?;
-                //file.dirty = true;
             } else {
                 file.dirty = calculate_hash(&file.flatten()) != calculate_hash(&file.copies);
             }
@@ -194,8 +316,16 @@ impl FileMod {
         &self.curr_dir
     }
 
-    pub fn insert(&mut self, file_buf: FileBuf) {
+    pub fn insert(&mut self, name: String) {
         let cnt = self.file_cnt;
+        let file_buf = FileBuf::new(name).unwrap();
+        self.file_map.insert(cnt, file_buf);
+        self.file_cnt += 1;
+    }
+
+    pub fn insert_from_path(&mut self, path: &PathBuf) {
+        let cnt = self.file_cnt;
+        let file_buf = FileBuf::from(path);
         self.file_map.insert(cnt, file_buf);
         self.file_cnt += 1;
     }

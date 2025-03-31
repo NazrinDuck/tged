@@ -10,8 +10,9 @@ use std::io::{self, Write};
 use tged::view;
 
 #[view("TopBar")]
-#[start=(1, 1)]
-#[end=(-1, 2)]
+#[silent]
+#[start=(1, 2)]
+#[end=(-1, 3)]
 #[bcolor=(0x14, 0x14, 0x14)]
 #[fcolor=(0xa0, 0x40, 0x40)]
 pub struct TopBar {
@@ -50,7 +51,7 @@ impl View for TopBar {
                 .fold(String::new(), |init: String, (id, file_buf)| {
                     let name = file_buf.name();
                     let dirty = if file_buf.is_dirty() {
-                        "".fcolor(green)
+                        "".fclr_head(green)
                     } else {
                         " ".to_string()
                     };
@@ -59,7 +60,7 @@ impl View for TopBar {
                             "{}{}{}",
                             "".color(bclr, dclr),
                             //"".color(bclr, dclr),
-                            format!(" {id}.{:^12}{dirty} ", name).color(dclr, sclr),
+                            format!("  {id}. {}  {dirty} ", name).color(dclr, sclr),
                             "".color(bclr, dclr) //"".color(bclr, dclr)
                         )
                     } else {
@@ -68,7 +69,7 @@ impl View for TopBar {
                             "{}{}{}",
                             "".color(bclr, clr),
                             //"".color(bclr, dclr),
-                            format!(" {id}.{:^12}{dirty} ", name).color(clr, fclr),
+                            format!("  {id}. {}  {dirty} ", name).color(clr, fclr),
                             "".color(bclr, clr) //"".color(bclr, dclr)
                         )
                     };

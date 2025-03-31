@@ -41,8 +41,9 @@ pub fn view(attr: TokenStream, item: TokenStream) -> TokenStream {
         Data::Struct(data) => match data.fields {
             Fields::Named(fields) => {
                 let recurse = fields.named.iter().map(|f| {
+                    let vis = &f.vis;
                     let (name, ty) = (&f.ident, &f.ty);
-                    quote! {#name: #ty,}
+                    quote! {#vis #name: #ty,}
                 });
 
                 let default_recurse = fields.named.iter().map(|f| {
@@ -69,6 +70,20 @@ pub fn view(attr: TokenStream, item: TokenStream) -> TokenStream {
             Fields::Unnamed(_) | Fields::Unit => unimplemented!(),
         },
         Data::Enum(_) | Data::Union(_) => unimplemented!(),
+    };
+
+    let is_lock = quote! {
+        #[inline]
+        fn is_lock(&self) -> bool {
+            self.lock
+        }
+    };
+
+    let is_silent = quote! {
+        #[inline]
+        fn is_silent(&self) -> bool {
+            self.silent
+        }
     };
 
     let get_start = quote! {
@@ -121,6 +136,7 @@ pub fn view(attr: TokenStream, item: TokenStream) -> TokenStream {
             #name {
                 #name_field
                 id: 0,
+                lock: false,
                 #pos_fields
                 #default_fields
             }
@@ -133,6 +149,10 @@ pub fn view(attr: TokenStream, item: TokenStream) -> TokenStream {
             #get_start
 
             #get_end
+
+            #is_silent
+
+            #is_lock
 
             #resize
         }
@@ -151,8 +171,10 @@ pub fn view(attr: TokenStream, item: TokenStream) -> TokenStream {
         #vis struct #name {
             name: String,
             id: ViewID,
+            lock: bool,
             start: (Pos, Pos),
             end: (Pos, Pos),
+            silent: bool,
             fcolor: Color,
             bcolor: Color,
             #old_fields
@@ -177,6 +199,7 @@ fn parse_attrs(attrs: Vec<Attribute>) -> syn::Result<TokenStream2> {
     let mut result: Vec<TokenStream2> = Vec::new();
     let (mut start, mut end): (bool, bool) = (false, false);
     let (mut bcolor, mut fcolor): (bool, bool) = (false, false);
+    let mut silent: bool = false;
     for attr in attrs {
         if attr.path().is_ident("start") || attr.path().is_ident("end") {
             let ident = attr.path().get_ident().unwrap();
@@ -276,6 +299,37 @@ fn parse_attrs(attrs: Vec<Attribute>) -> syn::Result<TokenStream2> {
             continue;
         }
 
+        if attr.path().is_ident("silent") {
+            let ident = attr.path().get_ident().unwrap();
+
+            if silent {
+                return Err(Error::new_spanned(
+                    ident,
+                    "arttribute `silent` can only appear once",
+                ));
+            }
+            silent = true;
+
+            result.push(quote! { #ident: true, });
+
+            /*
+            match &attr.meta {
+                Meta::NameValue(val) => {
+                    let is_silent = parse_silent(&val.value)?;
+
+                    result.push(quote! { #ident: #is_silent, });
+                }
+                other => {
+                    return Err(Error::new_spanned(
+                        other,
+                        "attribute `silent` format wrong".to_string(),
+                    ))
+                }
+            }
+            */
+            continue;
+        }
+
         // start/end part is necessary
 
         return Err(Error::new_spanned(attr, "unrecognized ident"));
@@ -286,6 +340,10 @@ fn parse_attrs(attrs: Vec<Attribute>) -> syn::Result<TokenStream2> {
 
     if !end {
         return Err(Error::new_spanned(0, "expected `end`"));
+    }
+
+    if !silent {
+        result.push(quote! { silent: false, });
     }
 
     // bcolor/fcolor part can be left empty
@@ -299,6 +357,22 @@ fn parse_attrs(attrs: Vec<Attribute>) -> syn::Result<TokenStream2> {
 
     Ok(quote! { #(#result)* })
 }
+
+/*
+fn parse_silent(expr: &Expr) -> syn::Result<bool> {
+    if let Expr::Lit(lit) = expr {
+        match &lit.lit {
+            syn::Lit::Bool(lit_bool) => {
+                let lit_bool = lit_bool.value();
+                Ok(lit_bool)
+            }
+            _ => Err(Error::new_spanned(lit, "must be literal bool")),
+        }
+    } else {
+        Err(Error::new_spanned(expr, "must be literal bool"))
+    }
+}
+*/
 
 fn parse_pos_tuple(expr: &Expr) -> syn::Result<(i16, i16)> {
     if let Expr::Tuple(tuple) = expr {
@@ -366,10 +440,10 @@ where
                 let val = val.base10_parse::<T>().unwrap();
                 Ok(val)
             }
-            _ => Err(Error::new_spanned(lit, "must be literal num")),
+            _ => Err(Error::new_spanned(lit, "must be literal number")),
         }
     } else {
-        Err(Error::new_spanned(expr, "must be literal num"))
+        Err(Error::new_spanned(expr, "must be literal number"))
     }
 }
 

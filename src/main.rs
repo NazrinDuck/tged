@@ -42,7 +42,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let args = Args::parse();
 
-    let mut file_mod = FileMod::from(args.files_name);
+    let files_name = args.files_name;
+
+    if files_name.is_empty() {}
+
+    let mut file_mod = FileMod::from(files_name);
     let mut term = Term::new();
     let mut settings = Settings::default();
     let mut screen = Screen::new();
