@@ -1,25 +1,77 @@
 use crate::{
-    color::{Color, Colorful},
     file::FileMod,
     settings::Settings,
     terminal::{cursor::Cursor, term::Term},
 };
 use getch_rs::{Getch, Key};
 use std::{
-    collections::HashMap,
+    collections::{HashMap, VecDeque},
     io::{self, stdout, Write},
 };
+use syn::parse::Nothing;
 
 use crate::view::{
-    bottombar::BottomBar, filetree::FileTree, mainview::MainView, menu::Menu, topbar::TopBar, Pos,
-    View, ViewID,
+    bottombar::BottomBar, filetree::FileTree, mainview::MainView, menu::Menu, topbar::TopBar, View,
+    ViewID,
 };
 
 pub struct Screen {
     focus: ViewID,
     id_cnt: u64,
     view_map: HashMap<ViewID, Box<dyn View>>,
-    tmp_buffer: String,
+    name_map: HashMap<String, ViewID>,
+}
+
+pub enum Op {
+    Nothing,
+    Shift(String),
+    Resize(String, (i16, i16, i16, i16)),
+}
+
+pub struct Module {
+    pub term: Term,
+    pub file_mod: FileMod,
+    pub settings: Settings,
+    message: HashMap<String, VecDeque<String>>,
+    operation: Vec<Op>,
+}
+
+impl Module {
+    pub fn new(term: Term, file_mod: FileMod, settings: Settings) -> Module {
+        Module {
+            term,
+            file_mod,
+            settings,
+            message: HashMap::new(),
+            operation: Vec::new(),
+        }
+    }
+
+    pub fn sendmsg(&mut self, to: String, content: String) {
+        let msg_queue = self.message.get_mut(&to);
+        match msg_queue {
+            Some(queue) => {
+                queue.push_back(content);
+            }
+            None => {
+                let mut queue = VecDeque::new();
+                queue.push_back(content);
+                self.message.insert(to, queue);
+            }
+        }
+    }
+
+    pub fn recvmsg(&mut self, name: &String) -> Option<String> {
+        let msg_queue = self.message.get_mut(name);
+        match msg_queue {
+            Some(queue) => queue.pop_front(),
+            None => None,
+        }
+    }
+
+    pub fn push_op(&mut self, op: Op) {
+        self.operation.push(op);
+    }
 }
 
 impl Screen {
@@ -28,34 +80,28 @@ impl Screen {
             focus: 0,
             id_cnt: 1,
             view_map: HashMap::new(),
-            tmp_buffer: String::new(),
+            name_map: HashMap::new(),
         }
     }
 
-    pub fn init(
-        &mut self,
-        term: &Term,
-        file_mod: &mut FileMod,
-        settings: &mut Settings,
-    ) -> io::Result<()> {
+    pub fn init(&mut self, module: &mut Module) -> io::Result<()> {
         let main_view = MainView::new();
         let top_bar = TopBar::new();
         let bottom_bar = BottomBar::new();
         let file_tree = FileTree::new();
-        //let menu = Menu::new();
+        let menu = Menu::new();
 
-        //main_view.init(term, file_mod, settings);
-        settings.num_offset = 6;
-        settings.is_show_num = true;
+        module.settings.num_offset = 6;
+        module.settings.is_show_num = true;
 
-        //self.register(Box::new(main_view.menu));
         self.register(Box::new(main_view));
         self.register(Box::new(top_bar));
         self.register(Box::new(bottom_bar));
         self.register(Box::new(file_tree));
+        self.register(Box::new(menu));
 
         for (_, view) in self.view_map.iter_mut() {
-            view.init(term, file_mod, settings);
+            view.init(module);
         }
 
         self.focus = 1;
@@ -63,19 +109,6 @@ impl Screen {
         Cursor::reset_csr();
         stdout().flush()?;
         Ok(())
-    }
-
-    fn refresh(term: &Term) {
-        Cursor::save_csr();
-        Cursor::reset_csr();
-        print!(
-            "{}",
-            " ".repeat(term.size())
-                .color(&Color::new(0x28, 0x28, 0x28), &Color::new(0x10, 0x10, 0x10)),
-        );
-
-        //print!("{}", " ".repeat(term.size()));
-        Cursor::restore_csr();
     }
 
     fn clean(term: &Term) -> std::io::Result<()> {
@@ -87,6 +120,8 @@ impl Screen {
     }
 
     fn register(&mut self, view: Box<dyn View>) {
+        self.name_map
+            .insert(view.get_name().to_string(), self.id_cnt);
         self.view_map.insert(self.id_cnt, view);
         self.id_cnt += 1;
     }
@@ -99,30 +134,32 @@ impl Screen {
         self.focus = new;
     }
 
-    pub fn interact(
-        &mut self,
-        term: Term,
-        file_mod: &mut FileMod,
-        settings: &Settings,
-    ) -> io::Result<()> {
-        Screen::clean(&term)?;
+    fn shift_to(&mut self, name: &String) {
+        let id = self.name_map.get(name).unwrap();
+        self.focus = *id;
+    }
+
+    pub fn interact(&mut self, module: &mut Module) -> io::Result<()> {
+        Screen::clean(&module.term)?;
 
         let mut cls = true;
         loop {
             let ch = Getch::new();
 
             if cls {
-                //Screen::refresh(&term);
+                let main_view = self.view_map.get_mut(&self.focus).unwrap();
+                main_view.update(module);
 
                 for (id, view) in self.view_map.iter_mut() {
-                    view.update(&term, file_mod);
                     if *id != self.focus {
-                        view.draw(&term, settings)?;
+                        view.update(module);
+                        view.draw(module)?;
                     }
                 }
+
                 let main_view = self.view_map.get_mut(&self.focus).unwrap();
-                main_view.draw(&term, settings)?;
-                main_view.set_cursor(&term, settings);
+                main_view.draw(module)?;
+                main_view.set_cursor(module);
             }
             let main_view = self.view_map.get_mut(&self.focus).unwrap();
             stdout().flush()?;
@@ -145,18 +182,22 @@ impl Screen {
                 }
 
                 // for debug
+                Ok(Key::Ctrl('r')) => {
+                    cls = false;
+                    dbg!(&module.message);
+                }
                 Ok(Key::Ctrl('d')) => {
                     cls = false;
-                    let con = &file_mod.curr().flatten();
+                    let con = &module.file_mod.curr().flatten();
                     dbg!(String::from_utf8_lossy(con));
                 }
                 Ok(Key::Ctrl('k')) => {
                     cls = false;
-                    dbg!(&file_mod);
+                    dbg!(&module.file_mod);
                 }
 
                 Ok(Key::Ctrl('s')) => {
-                    file_mod.save()?;
+                    module.file_mod.save()?;
                 }
 
                 Ok(Key::Alt(key)) => {
@@ -180,30 +221,30 @@ impl Screen {
 
                 // measure input key
                 Ok(key) => {
-                    main_view.matchar(&term, file_mod, settings, key);
+                    main_view.matchar(module, key);
                 }
                 Err(e) => panic!("{}", e),
             }
-            file_mod.update()?;
+            module.file_mod.update()?;
+
+            while !module.operation.is_empty() {
+                let op = module.operation.pop().unwrap_or(Op::Nothing);
+                match &op {
+                    Op::Nothing => (),
+                    Op::Shift(name) => {
+                        self.shift_to(name);
+                    }
+                    Op::Resize(name, size) => {
+                        let (dx_s, dy_s, dx_e, dy_e) = *size;
+                        let id = self.name_map.get(name).unwrap();
+                        let view = self.view_map.get_mut(&id).unwrap();
+                        view.resize(dx_s, dy_s, dx_e, dy_e);
+                    }
+                }
+            }
         }
 
-        Screen::clean(&term)?;
+        Screen::clean(&module.term)?;
         Ok(())
     }
 }
-
-/*
-#[derive(Default)]
-struct BufferLine {
-    //pos: (u16, u16),
-    height: u16,
-    width: u16,
-    file_names: Vec<String>,
-}
-
-struct TopBar {}
-
-struct BottomBar {}
-
-struct FileTree {}
-*/

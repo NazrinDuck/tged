@@ -274,14 +274,20 @@ pub struct FileMod {
 }
 
 impl FileMod {
-    pub fn new() -> Self {
-        let curr_dir = fs::canonicalize(PathBuf::from(".")).unwrap();
+    pub fn new(dir: PathBuf) -> Self {
+        let curr_dir = fs::canonicalize(dir).unwrap();
+        let mut file_map = HashMap::new();
+        file_map.insert(1, FileBuf::new(String::new()).unwrap());
         FileMod {
-            file_map: HashMap::new(),
-            file_cnt: 1,
-            curr_file: None,
+            file_map,
+            file_cnt: 2,
+            curr_file: Some(1),
             curr_dir,
         }
+    }
+
+    pub fn set_dir(&mut self, dir: PathBuf) {
+        self.curr_dir = fs::canonicalize(dir).unwrap();
     }
 
     #[inline]
@@ -316,18 +322,34 @@ impl FileMod {
         &self.curr_dir
     }
 
-    pub fn insert(&mut self, name: String) {
+    pub fn insert(&mut self, name: String) -> FileID {
         let cnt = self.file_cnt;
         let file_buf = FileBuf::new(name).unwrap();
         self.file_map.insert(cnt, file_buf);
         self.file_cnt += 1;
+        self.file_cnt
     }
 
-    pub fn insert_from_path(&mut self, path: &PathBuf) {
+    pub fn insert_from_path(&mut self, path: &PathBuf) -> FileID {
         let cnt = self.file_cnt;
         let file_buf = FileBuf::from(path);
-        self.file_map.insert(cnt, file_buf);
-        self.file_cnt += 1;
+        let id = self.search(path);
+        if id == 0 {
+            self.file_map.insert(cnt, file_buf);
+            self.file_cnt += 1;
+            self.file_cnt
+        } else {
+            id - 1
+        }
+    }
+
+    pub fn search(&mut self, path: &PathBuf) -> FileID {
+        for (id, file_buf) in self.file_map.iter() {
+            if file_buf.pathbuf() == path {
+                return *id;
+            }
+        }
+        0
     }
 
     pub fn mut_curr(&mut self) -> &mut FileBuf {
@@ -368,11 +390,24 @@ impl FileMod {
         self.curr_file = Some(curr_file);
         self.file_map.get(&curr_file).unwrap().get_status()
     }
+
+    #[inline]
+    pub fn shift_to(
+        &mut self,
+        file_id: FileID,
+        pos: (usize, usize),
+        scroll: usize,
+    ) -> (usize, usize, usize) {
+        self.mut_curr().save_status(pos, scroll);
+        let id = file_id % (self.file_cnt - 1) + 1;
+        self.curr_file = Some(id);
+        self.file_map.get(&id).unwrap().get_status()
+    }
 }
 
 impl From<Vec<String>> for FileMod {
     fn from(names: Vec<String>) -> Self {
-        let curr_dir = fs::canonicalize(PathBuf::from(".")).unwrap();
+        let curr_dir = PathBuf::new();
         let mut file_cnt: FileID = 1;
         let mut file_map = HashMap::new();
         for name in names {

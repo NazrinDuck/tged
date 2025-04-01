@@ -1,3 +1,4 @@
+use crate::screen::Module;
 use crate::settings::Settings;
 use crate::terminal::term::Term;
 use crate::FileMod;
@@ -61,6 +62,7 @@ impl Add<i16> for Pos {
 }
 
 pub trait Position {
+    fn get_name(&self) -> &String;
     fn get_start(&self, term: &Term) -> (u16, u16);
     fn get_end(&self, term: &Term) -> (u16, u16);
     fn resize(&mut self, dx_s: i16, dy_s: i16, dx_e: i16, dy_e: i16);
@@ -69,11 +71,11 @@ pub trait Position {
 }
 
 pub trait View: Position {
-    fn init(&mut self, term: &Term, file_mod: &mut FileMod, settings: &Settings);
-    fn matchar(&mut self, term: &Term, file_mod: &mut FileMod, settings: &Settings, key: Key);
-    fn set_cursor(&self, term: &Term, settings: &Settings);
-    fn update(&mut self, term: &Term, file_mod: &mut FileMod);
-    fn draw(&self, term: &Term, settings: &Settings) -> io::Result<()>;
+    fn init(&mut self, module: &mut Module);
+    fn matchar(&mut self, module: &mut Module, key: Key);
+    fn set_cursor(&self, module: &mut Module);
+    fn update(&mut self, module: &mut Module);
+    fn draw(&self, module: &mut Module) -> io::Result<()>;
 }
 
 pub trait SplitNAt {

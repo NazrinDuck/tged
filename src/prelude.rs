@@ -1,6 +1,8 @@
-pub use crate::file::FileMod;
+#[allow(unused)]
 pub use crate::{
     color::{Color, Colorful, END},
+    file::FileMod,
+    screen::{Module, Op},
     settings::Settings,
     terminal::{cursor::Cursor, term::Term},
     view::{Pos, Position, View, ViewID},

@@ -1,19 +1,11 @@
-use super::{Pos, View, ViewID};
-use crate::{
-    color::{Color, Colorful},
-    settings::Settings,
-    terminal::{cursor::Cursor, term::Term},
-    view::Position,
-    FileMod,
-};
+use crate::prelude::*;
+
 use getch_rs::Key;
 use std::{
     fs::{DirEntry, Metadata},
     io::{self, Write},
-    path::{self, PathBuf},
-    time::SystemTime,
+    path::PathBuf,
 };
-use tged::view;
 
 macro_rules! impl_icon_color {
     (
@@ -247,7 +239,7 @@ impl DirItem {
 }
 
 #[view("FileTree")]
-#[start=(1, 3)]
+#[start=(1, 2)]
 #[end=(26, -2)]
 pub struct FileTree {
     dir: String,
@@ -259,7 +251,8 @@ pub struct FileTree {
 }
 
 impl View for FileTree {
-    fn init(&mut self, term: &Term, file_mod: &mut FileMod, settings: &Settings) {
+    fn init(&mut self, module: &mut Module) {
+        let (term, file_mod, settings) = (&module.term, &mut module.file_mod, &mut module.settings);
         let start = self.get_start(term);
         let end = self.get_end(term);
         let max = end.0 - start.0;
@@ -269,7 +262,7 @@ impl View for FileTree {
             &settings.theme.stress_fclr,
         );
         let curr_dir = file_mod.curr_dir();
-        self.path = PathBuf::from(".");
+        self.path = curr_dir.to_path_buf();
         self.bcolor = bclr.clone();
         self.fcolor = fclr.clone();
         self.metadata = Some(self.path.metadata().unwrap());
@@ -279,7 +272,7 @@ impl View for FileTree {
         self.dir_items = read_dir_item(&self.path, bclr, fclr);
     }
 
-    fn update(&mut self, _: &Term, _: &mut FileMod) {
+    fn update(&mut self, module: &mut Module) {
         let metadata = self.path.metadata().unwrap();
         let prev_metadata = self.metadata.as_ref().unwrap();
 
@@ -303,16 +296,11 @@ impl View for FileTree {
             self.metadata = Some(metadata);
         };
     }
-    fn matchar(
-        &mut self,
-        term: &Term,
-        file_mod: &mut FileMod,
-        settings: &Settings,
-        key: getch_rs::Key,
-    ) {
+    fn matchar(&mut self, module: &mut Module, key: getch_rs::Key) {
+        let (term, file_mod, settings) = (&module.term, &mut module.file_mod, &mut module.settings);
         match key {
             Key::Char('\r') => {
-                self.enter(file_mod, term);
+                self.enter(module);
             }
             Key::Delete => {}
             Key::Up => {
@@ -326,13 +314,15 @@ impl View for FileTree {
             _ => (),
         }
     }
-    fn set_cursor(&self, term: &Term, _: &Settings) {
+    fn set_cursor(&self, module: &mut Module) {
+        let term = &module.term;
         let (mut csr_x, mut csr_y): (u16, u16) = self.get_start(term);
         csr_y += self.curr_line as u16 + 1;
 
         Cursor::set_csr(csr_x, csr_y);
     }
-    fn draw(&self, term: &Term, _: &Settings) -> std::io::Result<()> {
+    fn draw(&self, module: &mut Module) -> std::io::Result<()> {
+        let (term, settings) = (&module.term, &mut module.settings);
         self.refresh(term);
         let (x, y) = self.get_start(term);
         let (x_e, y_e) = self.get_end(term);
@@ -376,7 +366,8 @@ impl FileTree {
     }
 
     #[inline]
-    pub fn enter(&mut self, file_mod: &mut FileMod, term: &Term) {
+    pub fn enter(&mut self, module: &mut Module) {
+        let file_mod = &mut module.file_mod;
         let curr_line = self.curr_line;
         let flat = flatten(&self.dir_items);
         let path = flat.get(curr_line).unwrap();
@@ -393,7 +384,9 @@ impl FileTree {
                 }
             }
         } else {
-            file_mod.insert_from_path(path);
+            let latest = file_mod.insert_from_path(path);
+            module.sendmsg(String::from("MainView"), latest.to_string());
+            module.push_op(Op::Shift(String::from("MainView")));
         }
     }
 

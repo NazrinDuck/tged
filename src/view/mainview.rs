@@ -1,24 +1,15 @@
-use super::menu::Menu;
-use super::{Pos, SplitNAt, View, ViewID};
-use getch_rs::Key;
-use std::io::{self, Write};
-use std::rc::Rc;
-use tged::view;
+use crate::prelude::*;
 
-use crate::color::{Color, Colorful};
+use super::SplitNAt;
 use crate::file::Content;
-use crate::settings::Settings;
-use crate::{
-    terminal::{cursor::Cursor, term::Term},
-    view::Position,
-    FileMod,
-};
+use getch_rs::Key;
+use std::rc::Rc;
+
 #[view("MainView")]
 #[start=(26, 3)]
 #[end=(-1, -2)]
 //#[prior = 4]
 pub struct MainView {
-    pub menu: Menu,
     //line number's color
     lnum_clr: Color,
     //line number's stressed color
@@ -31,8 +22,18 @@ pub struct MainView {
 
 //#[bcolor=(0x20, 0x20, 0x20)]
 impl View for MainView {
-    fn update(&mut self, _: &Term, _: &mut FileMod) {}
-    fn matchar(&mut self, term: &Term, file_mod: &mut FileMod, settings: &Settings, key: Key) {
+    fn update(&mut self, module: &mut Module) {
+        if let Some(msg) = module.recvmsg(&self.name) {
+            let id = msg.parse::<usize>().unwrap();
+            let curr_pos = (self.curr_idx, self.curr_line);
+            let scroll = self.scroll;
+            let file_mod = &mut module.file_mod;
+            let new_status = file_mod.shift_to(id, curr_pos, scroll);
+            self.sync(file_mod, new_status).unwrap();
+        }
+    }
+    fn matchar(&mut self, module: &mut Module, key: getch_rs::Key) {
+        let (term, file_mod, settings) = (&module.term, &mut module.file_mod, &mut module.settings);
         match key {
             Key::Char('\r') => {
                 self.push_line(term, settings);
@@ -75,7 +76,8 @@ impl View for MainView {
         }
     }
 
-    fn set_cursor(&self, term: &Term, settings: &Settings) {
+    fn set_cursor(&self, module: &mut Module) {
+        let (term, settings) = (&module.term, &mut module.settings);
         let (curr_line, idx) = (self.curr_line, self.curr_idx);
         let content = self.content.borrow();
 
@@ -101,9 +103,15 @@ impl View for MainView {
         Cursor::set_csr(csr_x, csr_y);
     }
 
-    fn draw(&self, term: &Term, settings: &Settings) -> io::Result<()> {
+    fn draw(&self, module: &mut Module) -> io::Result<()> {
+        let (term, settings) = (&module.term, &mut module.settings);
         self.refresh(term);
-        let content = self.content.borrow();
+        let content: Vec<String> = self
+            .content
+            .borrow()
+            .iter()
+            .map(|line| line.replace("\r", "↵").replace("\t", "    "))
+            .collect();
 
         let (x_pos, y_pos) = self.get_pos(term);
 
@@ -185,7 +193,8 @@ impl View for MainView {
         Ok(())
     }
 
-    fn init(&mut self, _: &Term, file_mod: &mut FileMod, settings: &Settings) {
+    fn init(&mut self, module: &mut Module) {
+        let (file_mod, settings) = (&mut module.file_mod, &mut module.settings);
         /*
         let content = String::from_utf8_lossy(file_mod.get_content());
         for line in content.lines() {

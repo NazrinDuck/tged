@@ -1,17 +1,8 @@
-use super::{Pos, View, ViewID};
-use crate::{
-    color::{Color, Colorful},
-    settings::Settings,
-    terminal::{cursor::Cursor, term::Term},
-    view::Position,
-    FileMod,
-};
-use std::io::{self, Write};
-use tged::view;
+use crate::prelude::*;
 
 #[view("TopBar")]
 #[silent]
-#[start=(1, 2)]
+#[start=(26, 2)]
 #[end=(-1, 3)]
 #[bcolor=(0x14, 0x14, 0x14)]
 #[fcolor=(0xa0, 0x40, 0x40)]
@@ -26,7 +17,8 @@ pub struct TopBar {
 }
 
 impl View for TopBar {
-    fn init(&mut self, _: &Term, _: &mut FileMod, settings: &Settings) {
+    fn init(&mut self, module: &mut Module) {
+        let settings = &mut module.settings;
         let (bclr, fclr) = (&settings.theme.black, &settings.theme.weak_fclr);
         let (sclr, dclr) = (&settings.theme.yellow, &settings.theme.normal_bclr);
         self.bcolor = bclr.clone();
@@ -36,7 +28,8 @@ impl View for TopBar {
         self.green = settings.theme.green.clone();
     }
 
-    fn update(&mut self, _: &Term, file_mod: &mut FileMod) {
+    fn update(&mut self, module: &mut Module) {
+        let file_mod = &mut module.file_mod;
         let (bclr, fclr) = (&self.bcolor, &self.fcolor);
         let dclr = &self.dcolor;
         let sclr = &self.scolor;
@@ -49,7 +42,10 @@ impl View for TopBar {
             content
                 .into_iter()
                 .fold(String::new(), |init: String, (id, file_buf)| {
-                    let name = file_buf.name();
+                    let mut name = file_buf.name();
+                    if name.is_empty() {
+                        name = "[No Name]";
+                    }
                     let dirty = if file_buf.is_dirty() {
                         "".fclr_head(green)
                     } else {
@@ -81,9 +77,10 @@ impl View for TopBar {
                 });
         self.content = content;
     }
-    fn matchar(&mut self, _: &Term, _: &mut FileMod, _: &Settings, _: getch_rs::Key) {}
-    fn set_cursor(&self, _: &Term, _: &Settings) {}
-    fn draw(&self, term: &Term, _: &Settings) -> std::io::Result<()> {
+    fn matchar(&mut self, module: &mut Module, _: getch_rs::Key) {}
+    fn set_cursor(&self, module: &mut Module) {}
+    fn draw(&self, module: &mut Module) -> std::io::Result<()> {
+        let (term, settings) = (&module.term, &mut module.settings);
         self.refresh(term);
 
         /*

@@ -41,8 +41,7 @@ pub fn view(attr: TokenStream, item: TokenStream) -> TokenStream {
         Data::Struct(data) => match data.fields {
             Fields::Named(fields) => {
                 let recurse = fields.named.iter().map(|f| {
-                    let vis = &f.vis;
-                    let (name, ty) = (&f.ident, &f.ty);
+                    let (vis, name, ty) = (&f.vis, &f.ident, &f.ty);
                     quote! {#vis #name: #ty,}
                 });
 
@@ -70,6 +69,20 @@ pub fn view(attr: TokenStream, item: TokenStream) -> TokenStream {
             Fields::Unnamed(_) | Fields::Unit => unimplemented!(),
         },
         Data::Enum(_) | Data::Union(_) => unimplemented!(),
+    };
+
+    let is_show = quote! {
+        #[inline]
+        fn is_show(&self) -> bool {
+            self.show
+        }
+    };
+
+    let get_name = quote! {
+        #[inline]
+        fn get_name(&self) -> &String {
+            &self.name
+        }
     };
 
     let is_lock = quote! {
@@ -137,6 +150,7 @@ pub fn view(attr: TokenStream, item: TokenStream) -> TokenStream {
                 #name_field
                 id: 0,
                 lock: false,
+                show: true,
                 #pos_fields
                 #default_fields
             }
@@ -149,6 +163,8 @@ pub fn view(attr: TokenStream, item: TokenStream) -> TokenStream {
             #get_start
 
             #get_end
+
+            #get_name
 
             #is_silent
 
@@ -171,10 +187,11 @@ pub fn view(attr: TokenStream, item: TokenStream) -> TokenStream {
         #vis struct #name {
             name: String,
             id: ViewID,
-            lock: bool,
             start: (Pos, Pos),
             end: (Pos, Pos),
             silent: bool,
+            lock: bool,
+            show: bool,
             fcolor: Color,
             bcolor: Color,
             #old_fields
@@ -312,28 +329,12 @@ fn parse_attrs(attrs: Vec<Attribute>) -> syn::Result<TokenStream2> {
 
             result.push(quote! { #ident: true, });
 
-            /*
-            match &attr.meta {
-                Meta::NameValue(val) => {
-                    let is_silent = parse_silent(&val.value)?;
-
-                    result.push(quote! { #ident: #is_silent, });
-                }
-                other => {
-                    return Err(Error::new_spanned(
-                        other,
-                        "attribute `silent` format wrong".to_string(),
-                    ))
-                }
-            }
-            */
             continue;
         }
 
-        // start/end part is necessary
-
         return Err(Error::new_spanned(attr, "unrecognized ident"));
     }
+    // start/end part is necessary
     if !start {
         return Err(Error::new_spanned(0, "expected `start`"));
     }
@@ -357,22 +358,6 @@ fn parse_attrs(attrs: Vec<Attribute>) -> syn::Result<TokenStream2> {
 
     Ok(quote! { #(#result)* })
 }
-
-/*
-fn parse_silent(expr: &Expr) -> syn::Result<bool> {
-    if let Expr::Lit(lit) = expr {
-        match &lit.lit {
-            syn::Lit::Bool(lit_bool) => {
-                let lit_bool = lit_bool.value();
-                Ok(lit_bool)
-            }
-            _ => Err(Error::new_spanned(lit, "must be literal bool")),
-        }
-    } else {
-        Err(Error::new_spanned(expr, "must be literal bool"))
-    }
-}
-*/
 
 fn parse_pos_tuple(expr: &Expr) -> syn::Result<(i16, i16)> {
     if let Expr::Tuple(tuple) = expr {

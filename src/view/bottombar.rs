@@ -1,13 +1,4 @@
-use super::{Pos, View, ViewID};
-use crate::{
-    color::{Color, Colorful, END},
-    settings::Settings,
-    terminal::{cursor::Cursor, term::Term},
-    view::Position,
-    FileMod,
-};
-use std::io::{self, Write};
-use tged::view;
+use crate::prelude::*;
 
 #[view("BottomBar")]
 #[start=(1, -2)]
@@ -23,7 +14,8 @@ pub struct BottomBar {
 }
 
 impl View for BottomBar {
-    fn init(&mut self, _: &Term, _: &mut FileMod, settings: &Settings) {
+    fn init(&mut self, module: &mut Module) {
+        let settings = &module.settings;
         //let (bclr, fclr) = (&settings.theme.stress_bclr, &settings.theme.stress_fclr);
         self.bcolor_lv1 = settings.theme.stress_fclr.clone();
         self.fcolor_lv1 = settings.theme.normal_bclr.clone();
@@ -32,7 +24,8 @@ impl View for BottomBar {
         self.bcolor = settings.theme.black.clone();
         self.fcolor = settings.theme.normal_fclr.clone();
     }
-    fn update(&mut self, _: &Term, file_mod: &mut FileMod) {
+    fn update(&mut self, module: &mut Module) {
+        let file_mod = &mut module.file_mod;
         let (bclr_lv1, fclr_lv1) = (&self.bcolor_lv1, &self.fcolor_lv1);
         let (bclr_lv2, fclr_lv2) = (&self.bcolor_lv2, &self.fcolor_lv2);
         let (bclr, fclr) = (&self.bcolor, &self.fcolor);
@@ -68,9 +61,10 @@ impl View for BottomBar {
 
         self.content = content;
     }
-    fn matchar(&mut self, _: &Term, _: &mut FileMod, settings: &Settings, _: getch_rs::Key) {}
-    fn set_cursor(&self, _: &Term, settings: &Settings) {}
-    fn draw(&self, term: &Term, settings: &Settings) -> std::io::Result<()> {
+    fn matchar(&mut self, module: &mut Module, _: getch_rs::Key) {}
+    fn set_cursor(&self, module: &mut Module) {}
+    fn draw(&self, module: &mut Module) -> std::io::Result<()> {
+        let (term, _) = (&module.term, &mut module.settings);
         self.refresh(term);
         let (x, y) = self.get_start(term);
         Cursor::set_csr(x, y);
