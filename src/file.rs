@@ -213,26 +213,25 @@ impl FileBuf {
             }
             None => {
                 if self.name.is_empty() {
-                    todo!()
-                } else {
-                    let mut open_options = OpenOptions::new();
-                    let open_options = open_options.read(true).write(true).create(true);
-                    let mut file = open_options.open(&self.name)?;
-                    file.write_all(&content)?;
-                    self.copies = content.clone();
-                    file.sync_all()?;
-                    self.pathbuf = fs::canonicalize(&self.name)?;
-                    self.file = Some(file);
-                    self.metadata = Some(fs::metadata(&self.name)?);
-                    self.name = self
-                        .pathbuf
-                        .file_name()
-                        .unwrap()
-                        .to_str()
-                        .unwrap()
-                        .to_string();
-                    self.dirty = false;
+                    self.name = String::from("a.txt");
                 }
+                let mut open_options = OpenOptions::new();
+                let open_options = open_options.read(true).write(true).create(true);
+                let mut file = open_options.open(&self.name)?;
+                file.write_all(&content)?;
+                self.copies = content.clone();
+                file.sync_all()?;
+                self.pathbuf = fs::canonicalize(&self.name)?;
+                self.file = Some(file);
+                self.metadata = Some(fs::metadata(&self.name)?);
+                self.name = self
+                    .pathbuf
+                    .file_name()
+                    .unwrap()
+                    .to_str()
+                    .unwrap()
+                    .to_string();
+                self.dirty = false;
             }
         }
         Ok(())
@@ -371,15 +370,19 @@ impl FileMod {
         Ok(())
     }
 
+    pub fn save_all(&mut self) -> io::Result<()> {
+        for file in self.file_map.values_mut() {
+            file.save()?
+        }
+        Ok(())
+    }
+
     pub fn name(&self) -> &String {
         &self.curr().name
     }
 
-    pub fn names(&self) -> Vec<&String> {
-        self.file_map
-            .values()
-            .map(|file| &file.name)
-            .collect::<Vec<&String>>()
+    pub fn set_name(&mut self, name: String) {
+        self.mut_curr().name = name;
     }
 
     #[inline]

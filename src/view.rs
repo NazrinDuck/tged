@@ -8,6 +8,7 @@ use std::ops::Add;
 
 pub mod bottombar;
 pub mod filetree;
+pub mod help;
 pub mod mainview;
 pub mod menu;
 pub mod settings;
@@ -68,6 +69,7 @@ pub trait Position {
     fn resize(&mut self, dx_s: i16, dy_s: i16, dx_e: i16, dy_e: i16);
     fn is_silent(&self) -> bool;
     fn is_lock(&self) -> bool;
+    fn is_show(&self) -> bool;
 }
 
 pub trait View: Position {

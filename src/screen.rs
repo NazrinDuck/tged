@@ -2,6 +2,7 @@ use crate::{
     file::FileMod,
     settings::Settings,
     terminal::{cursor::Cursor, term::Term},
+    view::{help::Help, Position},
 };
 use getch_rs::{Getch, Key};
 use std::{
@@ -26,12 +27,14 @@ pub enum Op {
     Nothing,
     Shift(String),
     Resize(String, (i16, i16, i16, i16)),
+    Quit,
 }
 
 pub struct Module {
     pub term: Term,
     pub file_mod: FileMod,
     pub settings: Settings,
+    pub curr_view: String,
     message: HashMap<String, VecDeque<String>>,
     operation: Vec<Op>,
 }
@@ -42,6 +45,7 @@ impl Module {
             term,
             file_mod,
             settings,
+            curr_view: String::new(),
             message: HashMap::new(),
             operation: Vec::new(),
         }
@@ -90,15 +94,18 @@ impl Screen {
         let bottom_bar = BottomBar::new();
         let file_tree = FileTree::new();
         let menu = Menu::new();
+        let help = Help::new();
 
         module.settings.num_offset = 6;
         module.settings.is_show_num = true;
+        module.curr_view = main_view.get_name().clone();
 
         self.register(Box::new(main_view));
         self.register(Box::new(top_bar));
         self.register(Box::new(bottom_bar));
         self.register(Box::new(file_tree));
         self.register(Box::new(menu));
+        self.register(Box::new(help));
 
         for (_, view) in self.view_map.iter_mut() {
             view.init(module);
@@ -126,17 +133,21 @@ impl Screen {
         self.id_cnt += 1;
     }
 
-    fn shift(&mut self) {
+    fn shift(&mut self) -> &String {
         let mut new = self.focus % (self.id_cnt - 1) + 1;
-        while self.view_map.get(&new).unwrap().is_silent() {
+        let mut view = self.view_map.get(&new).unwrap();
+        while view.is_silent() || !view.is_show() {
             new = new % (self.id_cnt - 1) + 1;
+            view = self.view_map.get(&new).unwrap();
         }
         self.focus = new;
+        self.view_map.get(&new).unwrap().get_name()
     }
 
-    fn shift_to(&mut self, name: &String) {
+    fn shift_to<'a>(&mut self, name: &'a String) -> &'a String {
         let id = self.name_map.get(name).unwrap();
         self.focus = *id;
+        name
     }
 
     pub fn interact(&mut self, module: &mut Module) -> io::Result<()> {
@@ -153,7 +164,9 @@ impl Screen {
                 for (id, view) in self.view_map.iter_mut() {
                     if *id != self.focus {
                         view.update(module);
-                        view.draw(module)?;
+                        if view.is_show() {
+                            view.draw(module)?;
+                        }
                     }
                 }
 
@@ -167,11 +180,23 @@ impl Screen {
             cls = true;
             match ch.getch() {
                 // press ESC to leave
-                Ok(Key::Esc) => break,
+                Ok(Key::Esc) => {
+                    &module.file_mod;
+                    break;
+                }
+
+                Ok(Key::F(1)) => {
+                    let help = String::from("Help");
+                    if module.curr_view == help {
+                        module.curr_view = self.shift().clone();
+                    } else {
+                        module.curr_view = self.shift_to(&help).clone();
+                    }
+                }
 
                 Ok(Key::F(5)) => {
                     if !main_view.is_lock() {
-                        self.shift();
+                        module.curr_view = self.shift().clone();
                     }
                 }
 
@@ -196,27 +221,9 @@ impl Screen {
                     dbg!(&module.file_mod);
                 }
 
-                Ok(Key::Ctrl('s')) => {
-                    module.file_mod.save()?;
-                }
-
                 Ok(Key::Alt(key)) => {
                     cls = false;
                     dbg!(key);
-                }
-
-                Ok(Key::Other(key)) => {
-                    match key[..] {
-                        // Alt(Left)
-                        [27, 91, 49, 59, 51, 68] => {
-                            main_view.resize(-1, 0, 0, 0);
-                        }
-                        // Alt(Right)
-                        [27, 91, 49, 59, 51, 67] => {
-                            main_view.resize(1, 0, 0, 0);
-                        }
-                        _ => (),
-                    };
                 }
 
                 // measure input key
@@ -232,14 +239,15 @@ impl Screen {
                 match &op {
                     Op::Nothing => (),
                     Op::Shift(name) => {
-                        self.shift_to(name);
+                        module.curr_view = self.shift_to(name).clone();
                     }
                     Op::Resize(name, size) => {
                         let (dx_s, dy_s, dx_e, dy_e) = *size;
                         let id = self.name_map.get(name).unwrap();
-                        let view = self.view_map.get_mut(&id).unwrap();
+                        let view = self.view_map.get_mut(id).unwrap();
                         view.resize(dx_s, dy_s, dx_e, dy_e);
                     }
+                    Op::Quit => break,
                 }
             }
         }

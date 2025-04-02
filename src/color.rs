@@ -1,5 +1,3 @@
-use std::error::Error;
-
 pub const END: &str = "\x1b[0m";
 
 #[derive(Debug, Default, Clone)]
@@ -9,6 +7,7 @@ pub struct Color {
     b: u8,
 }
 
+#[allow(unused)]
 pub trait Colorful {
     fn color(&self, bclr: &Color, fclr: &Color) -> String;
     fn fcolor(&self, clr: &Color) -> String;
@@ -16,6 +15,7 @@ pub trait Colorful {
     fn fclr_head(&self, clr: &Color) -> String;
     fn bclr_head(&self, clr: &Color) -> String;
     fn bold(&self) -> String;
+    fn bold_head(&self) -> String;
 }
 
 impl Colorful for String {
@@ -45,6 +45,9 @@ impl Colorful for String {
     fn bold(&self) -> String {
         format!("\x1b[1m{self}{}", END)
     }
+    fn bold_head(&self) -> String {
+        format!("\x1b[1m{self}")
+    }
 }
 
 impl Colorful for str {
@@ -73,6 +76,9 @@ impl Colorful for str {
 
     fn bold(&self) -> String {
         format!("\x1b[1m{self}{}", END)
+    }
+    fn bold_head(&self) -> String {
+        format!("\x1b[1m{self}")
     }
 }
 

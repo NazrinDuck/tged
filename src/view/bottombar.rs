@@ -18,7 +18,7 @@ impl View for BottomBar {
         let settings = &module.settings;
         //let (bclr, fclr) = (&settings.theme.stress_bclr, &settings.theme.stress_fclr);
         self.bcolor_lv1 = settings.theme.stress_fclr.clone();
-        self.fcolor_lv1 = settings.theme.normal_bclr.clone();
+        self.fcolor_lv1 = settings.theme.black.clone();
         self.bcolor_lv2 = settings.theme.stress_bclr.clone();
         self.fcolor_lv2 = settings.theme.stress_fclr.clone();
         self.bcolor = settings.theme.black.clone();
@@ -46,8 +46,12 @@ impl View for BottomBar {
         let mut content = String::new();
         let file_size = pretty_size(file_mod);
 
-        let first_part = "TGED";
-        let second_part = file_mod.curr().name();
+        let first_part = &module.curr_view;
+        let second_part = if file_mod.curr().name().is_empty() {
+            "[New File]"
+        } else {
+            file_mod.curr().name()
+        };
         let third_part = &format!("size  {}", file_size);
 
         let bottom_bar = format!(

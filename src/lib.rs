@@ -171,6 +171,8 @@ pub fn view(attr: TokenStream, item: TokenStream) -> TokenStream {
             #is_lock
 
             #resize
+
+            #is_show
         }
     };
 

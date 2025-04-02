@@ -35,6 +35,20 @@ impl View for MainView {
     fn matchar(&mut self, module: &mut Module, key: getch_rs::Key) {
         let (term, file_mod, settings) = (&module.term, &mut module.file_mod, &mut module.settings);
         match key {
+            Key::Ctrl('f') => {
+                module.sendmsg(String::from("Menu"), String::from("search "));
+                module.push_op(Op::Shift(String::from("Menu")));
+            }
+            Key::Ctrl('s') => {
+                let curr_file = module.file_mod.name();
+                if curr_file.is_empty() {
+                    module.sendmsg(String::from("Menu"), String::from("save as: "));
+                    module.push_op(Op::Shift(String::from("Menu")));
+                } else {
+                    module.sendmsg(String::from("Menu"), format!("File \"{curr_file}\" Saved"));
+                    module.file_mod.save().unwrap();
+                }
+            }
             Key::Char('\r') => {
                 self.push_line(term, settings);
             }
@@ -68,6 +82,24 @@ impl View for MainView {
                 let scroll = self.scroll;
                 let new_status = file_mod.shift(curr_pos, scroll);
                 self.sync(file_mod, new_status).unwrap();
+            }
+
+            Key::Other(key) => {
+                match key[..] {
+                    // Alt(Left)
+                    [27, 91, 49, 59, 51, 68] => {
+                        self.resize(-1, 0, 0, 0);
+                        module.push_op(Op::Resize(String::from("FileTree"), (0, 0, -1, 0)));
+                        module.push_op(Op::Resize(String::from("TopBar"), (-1, 0, 0, 0)));
+                    }
+                    // Alt(Right)
+                    [27, 91, 49, 59, 51, 67] => {
+                        self.resize(1, 0, 0, 0);
+                        module.push_op(Op::Resize(String::from("FileTree"), (0, 0, 1, 0)));
+                        module.push_op(Op::Resize(String::from("TopBar"), (1, 0, 0, 0)));
+                    }
+                    _ => (),
+                };
             }
 
             other => {
