@@ -1,12 +1,18 @@
 use clap::Parser;
+use crossbeam_channel::{bounded, select, Receiver};
 use file::FileMod;
+use getch_rs::{Getch, Key};
 use screen::{Module, Screen};
 use settings::Settings;
 use std::{
     io::{self, IsTerminal},
     path::Path,
+    thread,
 };
 use terminal::term::Term;
+
+use signal_hook::consts::signal::*;
+use signal_hook::iterator::Signals;
 
 mod color;
 mod file;
@@ -38,16 +44,40 @@ pub struct Args {
     pub dir: String,
 }
 
+fn key_channel() -> Receiver<Key> {
+    let ch = Getch::new();
+    let (sender, receiver) = bounded(500);
+    thread::spawn(move || loop {
+        let key = ch.getch().unwrap();
+        sender.send(key).unwrap();
+    });
+    receiver
+}
+
+fn term_channel() -> Receiver<Term> {
+    let mut signals = Signals::new([SIGWINCH]).unwrap();
+    let (sender, receiver) = bounded(500);
+    thread::spawn(move || {
+        for _ in signals.forever() {
+            let mut new_tem = Term::new();
+            new_tem.init();
+            sender.send(new_tem).unwrap();
+        }
+    });
+    receiver
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     if !io::stdout().is_terminal() {
-        return Err("Please use in terminal/tty!".into());
+        return Err("Please use in terminal/tty".into());
     }
+
+    let args = Args::parse();
+
     let mut file_mod: FileMod;
     let mut term = Term::new();
     let mut settings = Settings::default();
     let mut screen = Screen::new();
-
-    let args = Args::parse();
 
     let files_name = args.files_name;
     if files_name.is_empty() {
@@ -66,12 +96,33 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         file_mod = FileMod::from(files_name);
         file_mod.set_dir(args.dir.into());
     }
-    term.init();
 
+    let key_events = key_channel();
+    let term_events = term_channel();
+
+    term.init();
     let mut module = Module::new(term, file_mod, settings);
+
     screen.init(&mut module)?;
-    // start interact
-    screen.interact(&mut module)?;
+    Screen::clean(&module.term)?;
+    screen.update(&mut module)?;
+    loop {
+        // start interact
+        select! {
+            recv(key_events) -> key => {
+                if screen.interact(&mut module, key?)? {
+                    break;
+                };
+            }
+
+            recv(term_events) -> term => {
+                module.term = term?;
+                screen.update(&mut module)?;
+            }
+        };
+    }
+
+    Screen::clean(&module.term)?;
 
     Ok(())
 }

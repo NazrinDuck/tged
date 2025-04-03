@@ -36,7 +36,7 @@ impl View for MainView {
         let (term, file_mod, settings) = (&module.term, &mut module.file_mod, &mut module.settings);
         match key {
             Key::Ctrl('f') => {
-                module.sendmsg(String::from("Menu"), String::from("search "));
+                module.sendmsg(String::from("Menu"), String::from("search: "));
                 module.push_op(Op::Shift(String::from("Menu")));
             }
             Key::Ctrl('s') => {
@@ -64,7 +64,6 @@ impl View for MainView {
             Key::Up => {
                 self.up(term, settings);
             }
-
             Key::Down => {
                 self.down(term, settings);
             }
@@ -75,6 +74,26 @@ impl View for MainView {
 
             Key::Right => {
                 self.right();
+            }
+
+            Key::Home => {
+                self.home();
+            }
+
+            Key::End => {
+                self.end();
+            }
+
+            Key::PageUp => {
+                for _ in [0; 25] {
+                    self.up(term, settings);
+                }
+            }
+
+            Key::PageDown => {
+                for _ in [0; 25] {
+                    self.down(term, settings);
+                }
             }
 
             Key::F(6) => {
@@ -436,5 +455,16 @@ impl MainView {
             */
             self.curr_idx = idx;
         }
+    }
+
+    #[inline]
+    pub fn end(&mut self) {
+        let idx = self.content.borrow()[self.curr_line].len();
+        self.curr_idx = idx;
+    }
+
+    #[inline]
+    pub fn home(&mut self) {
+        self.curr_idx = 0;
     }
 }

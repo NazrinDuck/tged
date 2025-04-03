@@ -144,7 +144,9 @@ impl Menu {
                 "quit" => {
                     module.push_op(Op::Quit);
                 }
-                "search" => {}
+                "search" => {
+                    module.sendmsg(String::from("MainView"), String::from(argv));
+                }
                 "save all" => {
                     if argv != "n" || argv != "N" {
                         module.file_mod.save_all().unwrap();
@@ -155,6 +157,23 @@ impl Menu {
                     module.file_mod.save().unwrap();
                     module.sendmsg(String::from("Menu"), format!("File \"{argv}\" Saved"));
                     module.push_op(Op::Shift(String::from("MainView")));
+                }
+                _ => (),
+            }
+        } else {
+            let cmd = self.input.trim();
+            match cmd {
+                "quit" => {
+                    module.push_op(Op::Quit);
+                }
+                "save" => {
+                    let name = &module.file_mod.name();
+                    if !name.is_empty() {
+                        module.sendmsg(String::from("Menu"), format!("File \"{name}\" Saved"));
+                        module.file_mod.save().unwrap();
+                    } else {
+                        module.sendmsg(String::from("Menu"), String::from("Use `save as: [NAME]`"));
+                    }
                 }
                 _ => (),
             }

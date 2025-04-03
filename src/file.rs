@@ -321,6 +321,7 @@ impl FileMod {
         &self.curr_dir
     }
 
+    /*
     pub fn insert(&mut self, name: String) -> FileID {
         let cnt = self.file_cnt;
         let file_buf = FileBuf::new(name).unwrap();
@@ -328,6 +329,7 @@ impl FileMod {
         self.file_cnt += 1;
         self.file_cnt
     }
+    */
 
     pub fn insert_from_path(&mut self, path: &PathBuf) -> FileID {
         let cnt = self.file_cnt;
@@ -368,6 +370,12 @@ impl FileMod {
     pub fn save(&mut self) -> io::Result<()> {
         self.mut_curr().save()?;
         Ok(())
+    }
+
+    pub fn is_saved(&self) -> bool {
+        self.file_map
+            .values()
+            .fold(false, |flag, file| file.is_dirty() || flag)
     }
 
     pub fn save_all(&mut self) -> io::Result<()> {

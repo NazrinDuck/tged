@@ -9,7 +9,6 @@ use std::{
     collections::{HashMap, VecDeque},
     io::{self, stdout, Write},
 };
-use syn::parse::Nothing;
 
 use crate::view::{
     bottombar::BottomBar, filetree::FileTree, mainview::MainView, menu::Menu, topbar::TopBar, View,
@@ -37,6 +36,7 @@ pub struct Module {
     pub curr_view: String,
     message: HashMap<String, VecDeque<String>>,
     operation: Vec<Op>,
+    //msgbox: MsgBox
 }
 
 impl Module {
@@ -118,7 +118,7 @@ impl Screen {
         Ok(())
     }
 
-    fn clean(term: &Term) -> std::io::Result<()> {
+    pub fn clean(term: &Term) -> std::io::Result<()> {
         Cursor::reset_csr();
         print!("{}", " ".repeat(term.size()));
         Cursor::reset_csr();
@@ -150,11 +150,122 @@ impl Screen {
         name
     }
 
+    pub fn update(&mut self, module: &mut Module) -> io::Result<()> {
+        let main_view = self.view_map.get_mut(&self.focus).unwrap();
+        main_view.update(module);
+
+        for (id, view) in self.view_map.iter_mut() {
+            if *id != self.focus {
+                view.update(module);
+                if view.is_show() {
+                    view.draw(module)?;
+                }
+            }
+        }
+
+        let main_view = self.view_map.get_mut(&self.focus).unwrap();
+        main_view.draw(module)?;
+        main_view.set_cursor(module);
+
+        stdout().flush()?;
+        Ok(())
+    }
+
+    pub fn interact(&mut self, module: &mut Module, key: Key) -> io::Result<bool> {
+        //let ch = Getch::new();
+        let main_view = self.view_map.get_mut(&self.focus).unwrap();
+        match key {
+            // press ESC to leave
+            Key::Esc => {
+                &module.file_mod;
+                return Ok(true);
+            }
+
+            // reserve key F1 ~ F5 for fixed function
+            Key::F(1) => {
+                let help = String::from("Help");
+                if module.curr_view == help {
+                    module.curr_view = self.shift().clone();
+                } else {
+                    module.curr_view = self.shift_to(&help).clone();
+                }
+            }
+            Key::F(2) => {
+                let main = String::from("MainView");
+                module.curr_view = self.shift_to(&main).clone();
+            }
+
+            Key::F(3) => {
+                let file_tree = String::from("FileTree");
+                module.curr_view = self.shift_to(&file_tree).clone();
+            }
+
+            Key::F(4) => {
+                let menu = String::from("Menu");
+                module.curr_view = self.shift_to(&menu).clone();
+            }
+
+            Key::F(5) => {
+                if !main_view.is_lock() {
+                    module.curr_view = self.shift().clone();
+                }
+            }
+
+            /*
+            // for debug
+            Ok(Key::Ctrl('r')) => {
+                cls = false;
+                dbg!(&module.message);
+            }
+            Ok(Key::Ctrl('d')) => {
+                cls = false;
+                let con = &module.file_mod.curr().flatten();
+                dbg!(String::from_utf8_lossy(con));
+            }
+            Ok(Key::Ctrl('k')) => {
+                cls = false;
+                dbg!(&module.file_mod);
+            }
+            Ok(Key::Alt(key)) => {
+                cls = false;
+                dbg!(key);
+            }
+            */
+            // measure input key
+            key => {
+                main_view.matchar(module, key);
+            }
+        }
+        module.file_mod.update()?;
+
+        while !module.operation.is_empty() {
+            let op = module.operation.pop().unwrap_or(Op::Nothing);
+            match &op {
+                Op::Nothing => (),
+                Op::Shift(name) => {
+                    module.curr_view = self.shift_to(name).clone();
+                }
+                Op::Resize(name, size) => {
+                    let (dx_s, dy_s, dx_e, dy_e) = *size;
+                    let id = self.name_map.get(name).unwrap();
+                    let view = self.view_map.get_mut(id).unwrap();
+                    view.resize(dx_s, dy_s, dx_e, dy_e);
+                }
+                Op::Quit => return Ok(true),
+            }
+        }
+
+        self.update(module)?;
+
+        Ok(false)
+    }
+
+    /*
     pub fn interact(&mut self, module: &mut Module) -> io::Result<()> {
         Screen::clean(&module.term)?;
 
         let mut cls = true;
-        loop {
+        'out: loop {
             let ch = Getch::new();
 
             if cls {
@@ -185,6 +296,7 @@ impl Screen {
                     break;
                 }
 
+                // reserve key F1 ~ F5 for fixed function
                 Ok(Key::F(1)) => {
                     let help = String::from("Help");
                     if module.curr_view == help {
@@ -193,6 +305,20 @@ impl Screen {
                         module.curr_view = self.shift_to(&help).clone();
                     }
                 }
+                Ok(Key::F(2)) => {
+                    let main = String::from("MainView");
+                    module.curr_view = self.shift_to(&main).clone();
+                }
+
+                Ok(Key::F(3)) => {
+                    let file_tree = String::from("FileTree");
+                    module.curr_view = self.shift_to(&file_tree).clone();
+                }
+
+                Ok(Key::F(4)) => {
+                    let menu = String::from("Menu");
+                    module.curr_view = self.shift_to(&menu).clone();
+                }
 
                 Ok(Key::F(5)) => {
                     if !main_view.is_lock() {
@@ -200,12 +326,7 @@ impl Screen {
                     }
                 }
 
-                // reserve key F1 ~ F5 for fixed function
-                Ok(Key::F(f)) if f <= 5 => {
-                    cls = false;
-                    dbg!(&f);
-                }
-
+                /*
                 // for debug
                 Ok(Key::Ctrl('r')) => {
                     cls = false;
@@ -220,7 +341,7 @@ impl Screen {
                     cls = false;
                     dbg!(&module.file_mod);
                 }
-
+                */
                 Ok(Key::Alt(key)) => {
                     cls = false;
                     dbg!(key);
@@ -247,7 +368,7 @@ impl Screen {
                         let view = self.view_map.get_mut(id).unwrap();
                         view.resize(dx_s, dy_s, dx_e, dy_e);
                     }
-                    Op::Quit => break,
+                    Op::Quit => break 'out,
                 }
             }
         }
@@ -255,4 +376,5 @@ impl Screen {
         Screen::clean(&module.term)?;
         Ok(())
     }
+    */
 }

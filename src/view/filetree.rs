@@ -10,14 +10,14 @@ use std::{
 macro_rules! impl_icon_color {
     (
         $(
-            $extension_name: expr, $icon: expr, $color: expr,
+            $extension: expr, $icon: expr, $color: expr,
         )*
     ) => {
         #[inline]
         fn match_icon(string: Option<&str>) -> String {
             match string {
                 $(
-                Some($extension_name) => $icon.fclr_head(&Color::from($color)),
+                Some($extension) => $icon.fclr_head(&Color::from($color)),
                 )*
                 _ => "".to_string(),
             }
@@ -154,6 +154,7 @@ fn read_dir_item(path: &PathBuf, bclr: &Color, fclr: &Color) -> Vec<DirItem> {
         let dir_item = get_item(dir, bclr, fclr);
         dir_items.push(dir_item);
     }
+    dir_items.sort_unstable_by_key(|file| if let DirItem::Dir(_) = file { 0 } else { 1 });
     dir_items
 }
 
