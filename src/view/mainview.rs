@@ -1,9 +1,18 @@
 use crate::prelude::*;
+use crate::MsgBox;
 
 use super::SplitNAt;
 use crate::file::Content;
 use getch_rs::Key;
 use std::rc::Rc;
+use widestring::{utf16str, Utf16Str, Utf16String};
+
+#[derive(Clone, Debug, Default)]
+enum Mode {
+    Search,
+    #[default]
+    Normal,
+}
 
 #[view("MainView")]
 #[start=(26, 3)]
@@ -18,6 +27,10 @@ pub struct MainView {
     curr_idx: usize,
     content: Content,
     scroll: usize,
+    mode: Mode,
+    search_stack: Vec<(usize, usize)>,
+    search_str: String,
+    search_idx: usize,
 }
 
 //#[bcolor=(0x20, 0x20, 0x20)]
@@ -33,97 +46,9 @@ impl View for MainView {
         }
     }
     fn matchar(&mut self, module: &mut Module, key: getch_rs::Key) {
-        let (term, file_mod, settings) = (&module.term, &mut module.file_mod, &mut module.settings);
-        match key {
-            Key::Ctrl('f') => {
-                module.sendmsg(String::from("Menu"), String::from("search: "));
-                module.push_op(Op::Shift(String::from("Menu")));
-            }
-            Key::Ctrl('s') => {
-                let curr_file = module.file_mod.name();
-                if curr_file.is_empty() {
-                    module.sendmsg(String::from("Menu"), String::from("save as: "));
-                    module.push_op(Op::Shift(String::from("Menu")));
-                } else {
-                    module.sendmsg(String::from("Menu"), format!("File \"{curr_file}\" Saved"));
-                    module.file_mod.save().unwrap();
-                }
-            }
-            Key::Char('\r') => {
-                self.push_line(term, settings);
-            }
-            Key::Char('\t') => {
-                self.push_str("    ");
-            }
-            Key::Char(char) => {
-                self.push(char);
-            }
-            Key::Delete => {
-                self.delete(term, settings);
-            }
-            Key::Up => {
-                self.up(term, settings);
-            }
-            Key::Down => {
-                self.down(term, settings);
-            }
-
-            Key::Left => {
-                self.left();
-            }
-
-            Key::Right => {
-                self.right();
-            }
-
-            Key::Home => {
-                self.home();
-            }
-
-            Key::End => {
-                self.end();
-            }
-
-            Key::PageUp => {
-                for _ in [0; 25] {
-                    self.up(term, settings);
-                }
-            }
-
-            Key::PageDown => {
-                for _ in [0; 25] {
-                    self.down(term, settings);
-                }
-            }
-
-            Key::F(6) => {
-                let curr_pos = (self.curr_idx, self.curr_line);
-                let scroll = self.scroll;
-                let new_status = file_mod.shift(curr_pos, scroll);
-                self.sync(file_mod, new_status).unwrap();
-            }
-
-            Key::Other(key) => {
-                match key[..] {
-                    // Alt(Left)
-                    [27, 91, 49, 59, 51, 68] => {
-                        self.resize(-1, 0, 0, 0);
-                        module.push_op(Op::Resize(String::from("FileTree"), (0, 0, -1, 0)));
-                        module.push_op(Op::Resize(String::from("TopBar"), (-1, 0, 0, 0)));
-                    }
-                    // Alt(Right)
-                    [27, 91, 49, 59, 51, 67] => {
-                        self.resize(1, 0, 0, 0);
-                        module.push_op(Op::Resize(String::from("FileTree"), (0, 0, 1, 0)));
-                        module.push_op(Op::Resize(String::from("TopBar"), (1, 0, 0, 0)));
-                    }
-                    _ => (),
-                };
-            }
-
-            other => {
-                dbg!(other);
-            }
+        match self.mode {
+            Mode::Normal => self.normal_mode(module, key),
+            Mode::Search => self.search_mode(module, key),
         }
     }
 
@@ -157,11 +82,16 @@ impl View for MainView {
     fn draw(&self, module: &mut Module) -> io::Result<()> {
         let (term, settings) = (&module.term, &mut module.settings);
         self.refresh(term);
-        let content: Vec<String> = self
+        let content: Vec<Utf16String> = self
             .content
             .borrow()
             .iter()
-            .map(|line| line.replace("\r", "↵").replace("\t", "    "))
+            .map(|line| {
+                line.to_string()
+                    .replace("\r", "↵")
+                    .replace("\t", "    ")
+                    .into()
+            })
             .collect();
 
         let (x_pos, y_pos) = self.get_pos(term);
@@ -184,7 +114,7 @@ impl View for MainView {
 
         let mut height_cnt = 1;
         'out: for line in content.iter().skip(self.scroll) {
-            let mut lines: Vec<String> = Vec::new();
+            let mut lines: Vec<Utf16String> = Vec::new();
             for (subline, cnt) in line.splitn_at(max_line as usize) {
                 if is_show_num {
                     let mut number = if cnt == 0 {
@@ -206,7 +136,7 @@ impl View for MainView {
                         subline.color(bclr, fclr)
                     };
 
-                    lines.push(format!("{number}{subline}"));
+                    lines.push(format!("{number}{subline}").into());
                     /*
                     lines.push(format!(
                         "{:>width$}│{subline}",
@@ -348,16 +278,16 @@ impl MainView {
     pub fn push(&mut self, ch: char) {
         let mut content = self.content.borrow_mut();
         if content.is_empty() {
-            content.push(String::new());
+            content.push(Utf16String::new());
         }
         content[self.curr_line].insert(self.curr_idx, ch);
         self.curr_idx += 1;
     }
 
     #[inline]
-    pub fn push_str(&mut self, string: &str) {
+    pub fn push_str(&mut self, string: &Utf16Str) {
         let mut content = self.content.borrow_mut();
-        content[self.curr_line].insert_str(self.curr_idx, string);
+        content[self.curr_line].insert_utfstr(self.curr_idx, string);
         self.curr_idx += string.len();
     }
 
@@ -368,8 +298,8 @@ impl MainView {
 
         let curr_line = content[line].clone();
         let (first, last) = curr_line.split_at(idx);
-        content[line] = String::from(first);
-        content.insert(line + 1, String::from(last));
+        content[line] = Utf16String::from(first);
+        content.insert(line + 1, Utf16String::from(last));
         drop(content);
 
         //self.curr_line += 1;
@@ -390,7 +320,7 @@ impl MainView {
             let mut content_mut = self.content.borrow_mut();
 
             self.curr_idx = content[line - 1].len();
-            content_mut[line - 1].push_str(&content[line]);
+            content_mut[line - 1].push_utfstr(&content[line]);
 
             content_mut.remove(line);
             drop(content_mut);
@@ -433,13 +363,7 @@ impl MainView {
     #[inline]
     pub fn left(&mut self) {
         if self.curr_idx > 0 {
-            let mut idx = self.curr_idx - 1;
-            /*
-            while idx > 0 && !self.content.borrow()[self.curr_line].is_char_boundary(idx) {
-                idx -= 1;
-            }
-            */
-            self.curr_idx = idx;
+            self.curr_idx -= 1;
         }
     }
 
@@ -447,13 +371,7 @@ impl MainView {
     pub fn right(&mut self) {
         let max = self.content.borrow()[self.curr_line].len();
         if self.curr_idx < max {
-            let mut idx = self.curr_idx + 1;
-            /*
-            while idx < max && !self.content.borrow()[self.curr_line].is_char_boundary(idx) {
-                idx += 1;
-            }
-            */
-            self.curr_idx = idx;
+            self.curr_idx += 1;
         }
     }
 
@@ -466,5 +384,236 @@ impl MainView {
     #[inline]
     pub fn home(&mut self) {
         self.curr_idx = 0;
+    }
+
+    #[inline]
+    pub fn set_pos(&mut self, pos: (usize, usize)) {
+        self.curr_line = pos.0;
+        self.curr_idx = pos.1;
+    }
+
+    pub fn search_mode(&mut self, module: &mut Module, key: getch_rs::Key) {
+        let term = &module.term;
+        match key {
+            Key::Ctrl('f') => {
+                let ret = MsgBox::new()
+                    .title("Replace")
+                    .default_pos(module)
+                    .wait::<String>(module)
+                    .unwrap_or_default();
+                if !ret.is_empty() {
+                    let mut content = self.content.borrow_mut();
+                    let start = self.curr_idx;
+                    let end = start + self.search_str.len();
+                    content[self.curr_line].replace_range(start..end, &Utf16String::from(ret));
+
+                    let search_str = self.search_str.clone();
+
+                    let mut lines: usize = 0;
+                    let match_str: Vec<_> = content
+                        .iter()
+                        .flat_map(move |line| {
+                            lines += 1;
+                            line.to_string()
+                                .match_indices(&search_str)
+                                .map(|pat| (lines - 1, pat.0))
+                                .collect::<Vec<(usize, usize)>>()
+                        })
+                        .collect();
+                    if !match_str.is_empty() {
+                        self.search_stack = match_str;
+                    } else {
+                        self.mode = Mode::Normal;
+                    }
+                }
+            }
+            Key::Char('\r') => {
+                self.mode = Mode::Normal;
+            }
+            Key::Up | Key::PageUp | Key::Left => {
+                let len = self.search_stack.len();
+                if self.search_idx < 1 {
+                    self.search_idx = len - 1;
+                } else {
+                    self.search_idx = (self.search_idx - 1) % self.search_stack.len();
+                }
+                self.set_pos(self.search_stack[self.search_idx]);
+                module.sendmsg(
+                    String::from("Menu"),
+                    format!(
+                        "Search for String \"{}\" at Index {}",
+                        self.search_str, self.search_idx
+                    ),
+                );
+            }
+
+            Key::Down | Key::PageDown | Key::Right => {
+                self.search_idx = (self.search_idx + 1) % self.search_stack.len();
+                self.set_pos(self.search_stack[self.search_idx]);
+            }
+
+            Key::Home => {
+                self.set_pos(self.search_stack[0]);
+            }
+
+            Key::End => {
+                let len = self.search_stack.len();
+                self.set_pos(self.search_stack[len - 1]);
+            }
+
+            Key::Other(key) => {
+                match key[..] {
+                    // Alt(Left)
+                    [27, 91, 49, 59, 51, 68] => {
+                        self.resize(term, -1, 0, 0, 0);
+                        module.push_op(Op::Resize(String::from("FileTree"), (0, 0, -1, 0)));
+                        module.push_op(Op::Resize(String::from("TopBar"), (-1, 0, 0, 0)));
+                    }
+                    // Alt(Right)
+                    [27, 91, 49, 59, 51, 67] => {
+                        self.resize(term, 1, 0, 0, 0);
+                        module.push_op(Op::Resize(String::from("FileTree"), (0, 0, 1, 0)));
+                        module.push_op(Op::Resize(String::from("TopBar"), (1, 0, 0, 0)));
+                    }
+                    _ => (),
+                };
+            }
+
+            _ => (),
+        }
+    }
+
+    pub fn normal_mode(&mut self, module: &mut Module, key: getch_rs::Key) {
+        let (term, file_mod, settings) = (&module.term, &mut module.file_mod, &mut module.settings);
+        match key {
+            Key::Ctrl('f') => {
+                let ret = MsgBox::new()
+                    .title("Search")
+                    .default_pos(module)
+                    .wait::<String>(module)
+                    .unwrap_or_default();
+                if !ret.is_empty() {
+                    self.search_str = ret.clone();
+
+                    let content = self.content.borrow();
+                    let mut lines: usize = 0;
+                    let match_str: Vec<_> = content
+                        .iter()
+                        .flat_map(move |line| {
+                            lines += 1;
+                            line.to_string()
+                                .match_indices(&ret)
+                                .map(|pat| (lines - 1, pat.0))
+                                .collect::<Vec<(usize, usize)>>()
+                        })
+                        .collect();
+                    drop(content);
+
+                    if !match_str.is_empty() {
+                        self.search_stack = match_str;
+                        self.mode = Mode::Search;
+                        self.set_pos(self.search_stack[self.search_idx]);
+                        module.sendmsg(
+                            String::from("Menu"),
+                            format!(
+                                "Search for String \"{}\" at Index {}",
+                                self.search_str, self.search_idx
+                            ),
+                        );
+                    }
+                }
+            }
+            Key::Ctrl('s') => {
+                let curr_file = module.file_mod.name();
+                if curr_file.is_empty() {
+                    let ret = MsgBox::new()
+                        .title("Save as")
+                        .default_pos(module)
+                        .wait::<String>(module)
+                        .unwrap_or_default();
+                    if !ret.is_empty() {
+                        module.sendmsg(String::from("Menu"), format!("File \"{ret}\" Saved"));
+                        module.file_mod.set_name(ret);
+                        module.file_mod.save().unwrap();
+                    }
+                } else {
+                    module.sendmsg(String::from("Menu"), format!("File \"{curr_file}\" Saved"));
+                    module.file_mod.save().unwrap();
+                }
+            }
+            Key::Char('\r') => {
+                self.push_line(term, settings);
+            }
+            Key::Char('\t') => {
+                self.push_str(utf16str!("    "));
+            }
+            Key::Char(char) => {
+                self.push(char);
+            }
+            Key::Delete => {
+                self.delete(term, settings);
+            }
+            Key::Up => {
+                self.up(term, settings);
+            }
+            Key::Down => {
+                self.down(term, settings);
+            }
+
+            Key::Left => {
+                self.left();
+            }
+
+            Key::Right => {
+                self.right();
+            }
+
+            Key::Home => {
+                self.home();
+            }
+
+            Key::End => {
+                self.end();
+            }
+
+            Key::PageUp => {
+                for _ in [0; 25] {
+                    self.up(term, settings);
+                }
+            }
+
+            Key::PageDown => {
+                for _ in [0; 25] {
+                    self.down(term, settings);
+                }
+            }
+
+            Key::F(6) => {
+                let curr_pos = (self.curr_idx, self.curr_line);
+                let scroll = self.scroll;
+                let new_status = file_mod.shift(curr_pos, scroll);
+                self.sync(file_mod, new_status).unwrap();
+            }
+
+            Key::Other(key) => {
+                match key[..] {
+                    // Alt(Left)
+                    [27, 91, 49, 59, 51, 68] => {
+                        self.resize(term, -1, 0, 0, 0);
+                        module.push_op(Op::Resize(String::from("FileTree"), (0, 0, -1, 0)));
+                        module.push_op(Op::Resize(String::from("TopBar"), (-1, 0, 0, 0)));
+                    }
+                    // Alt(Right)
+                    [27, 91, 49, 59, 51, 67] => {
+                        self.resize(term, 1, 0, 0, 0);
+                        module.push_op(Op::Resize(String::from("FileTree"), (0, 0, 1, 0)));
+                        module.push_op(Op::Resize(String::from("TopBar"), (1, 0, 0, 0)));
+                    }
+                    _ => (),
+                };
+            }
+
+            _ => (),
+        }
     }
 }

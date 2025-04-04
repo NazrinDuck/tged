@@ -20,7 +20,7 @@ use syn::{
 #[proc_macro_attribute]
 pub fn view(attr: TokenStream, item: TokenStream) -> TokenStream {
     let input = parse_macro_input!(item as DeriveInput);
-    dbg!(&attr);
+    //dbg!(&attr);
     let attr = parse_macro_input!(attr as Lit);
 
     let name_field = match parse_view_attr(attr) {
@@ -34,6 +34,7 @@ pub fn view(attr: TokenStream, item: TokenStream) -> TokenStream {
     };
     let vis = input.vis;
     let name = input.ident;
+    let generics = input.generics;
 
     let old_fields;
     let default_fields;
@@ -133,13 +134,23 @@ pub fn view(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     let resize = quote! {
         #[inline]
-        fn resize(&mut self, dx_s: i16, dy_s: i16, dx_e: i16, dy_e: i16) {
+        fn resize(&mut self, term: &Term, dx_s: i16, dy_s: i16, dx_e: i16, dy_e: i16) {
             let (x_s, y_s) = self.start.clone();
             let (x_e, y_e) = self.end.clone();
-            self.start.0 = x_s + dx_s;
-            self.start.1 = y_s + dy_s;
-            self.end.0 = x_e + dx_e;
-            self.end.1 = y_e + dy_e;
+            self.start.0 = x_s.clone() + dx_s;
+            self.start.1 = y_s.clone() + dy_s;
+            self.end.0 = x_e.clone() + dx_e;
+            self.end.1 = y_e.clone() + dy_e;
+
+            if self.start.0.unwrap(term.width) >= self.end.0.unwrap(term.width) {
+                self.start.0 = x_s;
+                self.end.0 = x_e;
+            }
+
+            if self.start.1.unwrap(term.height) >= self.end.1.unwrap(term.height) {
+                self.start.1 = y_s;
+                self.end.1 = y_e;
+            }
         }
     };
 
@@ -185,8 +196,8 @@ pub fn view(attr: TokenStream, item: TokenStream) -> TokenStream {
     };
 
     let expanded = quote! {
-        #[derive(Debug)]
-        #vis struct #name {
+        #[derive(Debug, Clone)]
+        #vis struct #name #generics {
             name: String,
             id: ViewID,
             start: (Pos, Pos),

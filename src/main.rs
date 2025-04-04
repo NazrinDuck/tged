@@ -10,6 +10,10 @@ use std::{
     thread,
 };
 use terminal::term::Term;
+use view::{
+    msgbox::{self, MsgBox},
+    View,
+};
 
 use signal_hook::consts::signal::*;
 use signal_hook::iterator::Signals;
@@ -101,7 +105,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let term_events = term_channel();
 
     term.init();
-    let mut module = Module::new(term, file_mod, settings);
+    let mut module = Module::new(term, file_mod, settings, key_events.clone());
 
     screen.init(&mut module)?;
     Screen::clean(&module.term)?;

@@ -8,8 +8,10 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::time::SystemTime;
 
+use widestring::Utf16String;
+
 pub(crate) type FileID = usize;
-pub(crate) type Content = Rc<RefCell<Vec<String>>>;
+pub(crate) type Content = Rc<RefCell<Vec<Utf16String>>>;
 
 impl From<&PathBuf> for FileBuf {
     fn from(value: &PathBuf) -> Self {
@@ -44,8 +46,8 @@ impl From<&PathBuf> for FileBuf {
 
         let content = buf
             .split('\n')
-            .map(|s| s.to_string())
-            .collect::<Vec<String>>();
+            .map(|s| s.into())
+            .collect::<Vec<Utf16String>>();
         let content = Rc::new(RefCell::new(content));
         let copies = buf.into_bytes();
 
@@ -112,8 +114,8 @@ impl FileBuf {
 
         let content = buf
             .split('\n')
-            .map(|s| s.to_string())
-            .collect::<Vec<String>>();
+            .map(|s| s.into())
+            .collect::<Vec<Utf16String>>();
         let content = Rc::new(RefCell::new(content));
         let copies = buf.into_bytes();
 
@@ -182,8 +184,8 @@ impl FileBuf {
 
             let content = buf
                 .split('\n')
-                .map(|s| s.to_string())
-                .collect::<Vec<String>>();
+                .map(|s| s.into())
+                .collect::<Vec<Utf16String>>();
             let content = Rc::new(RefCell::new(content));
             let copies = buf.into_bytes();
 
@@ -372,10 +374,10 @@ impl FileMod {
         Ok(())
     }
 
-    pub fn is_saved(&self) -> bool {
+    pub fn is_all_saved(&self) -> bool {
         self.file_map
             .values()
-            .fold(false, |flag, file| file.is_dirty() || flag)
+            .fold(true, |flag, file| !file.is_dirty() && flag)
     }
 
     pub fn save_all(&mut self) -> io::Result<()> {

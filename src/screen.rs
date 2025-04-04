@@ -1,14 +1,18 @@
 use crate::{
+    color::END,
     file::FileMod,
     settings::Settings,
     terminal::{cursor::Cursor, term::Term},
-    view::{help::Help, Position},
+    view::{help::Help, msgbox::MsgBox, Position},
 };
+use crossbeam_channel::Receiver;
 use getch_rs::{Getch, Key};
 use std::{
     collections::{HashMap, VecDeque},
     io::{self, stdout, Write},
 };
+
+use widestring::Utf16String;
 
 use crate::view::{
     bottombar::BottomBar, filetree::FileTree, mainview::MainView, menu::Menu, topbar::TopBar, View,
@@ -36,11 +40,16 @@ pub struct Module {
     pub curr_view: String,
     message: HashMap<String, VecDeque<String>>,
     operation: Vec<Op>,
-    //msgbox: MsgBox
+    key_recv: Receiver<Key>,
 }
 
 impl Module {
-    pub fn new(term: Term, file_mod: FileMod, settings: Settings) -> Module {
+    pub fn new(
+        term: Term,
+        file_mod: FileMod,
+        settings: Settings,
+        key_recv: Receiver<Key>,
+    ) -> Module {
         Module {
             term,
             file_mod,
@@ -48,6 +57,7 @@ impl Module {
             curr_view: String::new(),
             message: HashMap::new(),
             operation: Vec::new(),
+            key_recv,
         }
     }
 
@@ -75,6 +85,10 @@ impl Module {
 
     pub fn push_op(&mut self, op: Op) {
         self.operation.push(op);
+    }
+
+    pub fn key_channel(&self) -> Receiver<Key> {
+        self.key_recv.clone()
     }
 }
 
@@ -120,6 +134,7 @@ impl Screen {
 
     pub fn clean(term: &Term) -> std::io::Result<()> {
         Cursor::reset_csr();
+        print!("{}", END);
         print!("{}", " ".repeat(term.size()));
         Cursor::reset_csr();
         stdout().flush()?;
@@ -173,12 +188,33 @@ impl Screen {
 
     pub fn interact(&mut self, module: &mut Module, key: Key) -> io::Result<bool> {
         //let ch = Getch::new();
+        let mut cls = true;
         let main_view = self.view_map.get_mut(&self.focus).unwrap();
         match key {
             // press ESC to leave
             Key::Esc => {
-                &module.file_mod;
-                return Ok(true);
+                if !module.file_mod.is_all_saved() {
+                    let ret = MsgBox::new()
+                        .title("Save All?(y/n)")
+                        .default_pos(module)
+                        .wait::<String>(module)
+                        .unwrap_or_default();
+                    match &ret[..] {
+                        "n" | "N" => (),
+                        _ => module.file_mod.save_all()?,
+                    };
+                    return Ok(true);
+                } else {
+                    let ret = MsgBox::new()
+                        .title("Quit?(y/n)")
+                        .default_pos(module)
+                        .wait::<String>(module)
+                        .unwrap_or_default();
+                    match &ret[..] {
+                        "n" | "N" => (),
+                        _ => return Ok(true),
+                    };
+                }
             }
 
             // reserve key F1 ~ F5 for fixed function
@@ -212,25 +248,26 @@ impl Screen {
             }
 
             /*
+             */
             // for debug
-            Ok(Key::Ctrl('r')) => {
+            Key::Ctrl('r') => {
                 cls = false;
                 dbg!(&module.message);
             }
-            Ok(Key::Ctrl('d')) => {
+            Key::Ctrl('d') => {
                 cls = false;
-                let con = &module.file_mod.curr().flatten();
-                dbg!(String::from_utf8_lossy(con));
+                let a = Utf16String::from("啊啊");
+                dbg!(a.len());
+                dbg!(a.chars().count());
             }
-            Ok(Key::Ctrl('k')) => {
+            Key::Ctrl('k') => {
                 cls = false;
                 dbg!(&module.file_mod);
             }
-            Ok(Key::Alt(key)) => {
+            Key::Alt(key) => {
                 cls = false;
                 dbg!(key);
             }
-            */
             // measure input key
             key => {
                 main_view.matchar(module, key);
@@ -249,13 +286,15 @@ impl Screen {
                     let (dx_s, dy_s, dx_e, dy_e) = *size;
                     let id = self.name_map.get(name).unwrap();
                     let view = self.view_map.get_mut(id).unwrap();
-                    view.resize(dx_s, dy_s, dx_e, dy_e);
+                    view.resize(&module.term, dx_s, dy_s, dx_e, dy_e);
                 }
                 Op::Quit => return Ok(true),
             }
         }
 
-        self.update(module)?;
+        if cls {
+            self.update(module)?;
+        }
 
         Ok(false)
     }

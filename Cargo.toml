@@ -12,6 +12,7 @@ quote = "1.0.40"
 proc-macro2 = "1.0.94"
 signal-hook = {version = "0.3.17", features = ["extended-siginfo"]}
 crossbeam-channel = "0.5.14"
+widestring = "1.2.0"
 
 [profile.dev]
 opt-level = 0

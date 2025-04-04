@@ -3,14 +3,17 @@ use crate::settings::Settings;
 use crate::terminal::term::Term;
 use crate::FileMod;
 use getch_rs::Key;
+use std::cmp::Ordering;
 use std::io;
 use std::ops::Add;
+use widestring::Utf16String;
 
 pub mod bottombar;
 pub mod filetree;
 pub mod help;
 pub mod mainview;
 pub mod menu;
+pub mod msgbox;
 pub mod settings;
 pub mod topbar;
 
@@ -62,11 +65,24 @@ impl Add<i16> for Pos {
     }
 }
 
+impl TryFrom<i16> for Pos {
+    type Error = &'static str;
+    fn try_from(value: i16) -> Result<Self, Self::Error> {
+        let val_abs = value.unsigned_abs() - 1;
+
+        match value.cmp(&0) {
+            Ordering::Greater => Ok(Pos::Fixed(val_abs)),
+            Ordering::Less => Ok(Pos::Opposite(val_abs)),
+            Ordering::Equal => Err("value can't be zero"),
+        }
+    }
+}
+
 pub trait Position {
     fn get_name(&self) -> &String;
     fn get_start(&self, term: &Term) -> (u16, u16);
     fn get_end(&self, term: &Term) -> (u16, u16);
-    fn resize(&mut self, dx_s: i16, dy_s: i16, dx_e: i16, dy_e: i16);
+    fn resize(&mut self, term: &Term, dx_s: i16, dy_s: i16, dx_e: i16, dy_e: i16);
     fn is_silent(&self) -> bool;
     fn is_lock(&self) -> bool;
     fn is_show(&self) -> bool;
@@ -81,11 +97,13 @@ pub trait View: Position {
 }
 
 pub trait SplitNAt {
-    fn splitn_at(&self, mid: usize) -> SplitNAtIter;
+    fn splitn_at(&self, mid: usize) -> SplitNAtIter<Self>
+    where
+        Self: std::marker::Sized;
 }
 
 impl SplitNAt for String {
-    fn splitn_at(&self, mid: usize) -> SplitNAtIter {
+    fn splitn_at(&self, mid: usize) -> SplitNAtIter<Self> {
         SplitNAtIter {
             string: self.clone(),
             is_end: false,
@@ -95,14 +113,28 @@ impl SplitNAt for String {
     }
 }
 
-pub struct SplitNAtIter {
-    string: String,
+impl SplitNAt for Utf16String {
+    fn splitn_at(&self, mid: usize) -> SplitNAtIter<Self> {
+        SplitNAtIter {
+            string: self.clone(),
+            is_end: false,
+            count: 0,
+            mid,
+        }
+    }
+}
+
+pub struct SplitNAtIter<T>
+where
+    T: std::marker::Sized,
+{
+    string: T,
     is_end: bool,
     count: u64,
     mid: usize,
 }
 
-impl Iterator for SplitNAtIter {
+impl Iterator for SplitNAtIter<String> {
     type Item = (String, u64);
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -114,9 +146,51 @@ impl Iterator for SplitNAtIter {
         let count = self.count;
         self.count += 1;
         if string.len() > mid {
-            let (first, last) = string.split_at(mid);
-            self.string = last.to_string();
-            Some((first.to_string(), count))
+            let (first, last): (String, String);
+
+            if string.is_char_boundary(mid) {
+                let (f, l) = string.split_at(mid);
+                first = f.to_string();
+                last = l.to_string();
+            } else {
+                let (f, l) = string.split_at(mid - 1);
+                first = String::from(f) + " ";
+                last = l.to_string();
+            };
+            self.string = last;
+            Some((first, count))
+        } else {
+            self.is_end = true;
+            Some((string, count))
+        }
+    }
+}
+
+impl Iterator for SplitNAtIter<Utf16String> {
+    type Item = (Utf16String, u64);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.is_end {
+            return None;
+        }
+        let mid = self.mid;
+        let string = self.string.clone();
+        let count = self.count;
+        self.count += 1;
+        if string.len() > mid {
+            let (first, last): (Utf16String, Utf16String);
+
+            if string.is_char_boundary(mid) {
+                let (f, l) = string.split_at(mid);
+                first = f.into();
+                last = l.into();
+            } else {
+                let (f, l) = string.split_at(mid - 1);
+                first = Utf16String::from(f) + " ";
+                last = l.into();
+            };
+            self.string = last;
+            Some((first, count))
         } else {
             self.is_end = true;
             Some((string, count))

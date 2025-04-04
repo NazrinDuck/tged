@@ -1,3 +1,5 @@
+use widestring::Utf16String;
+
 pub const END: &str = "\x1b[0m";
 
 #[derive(Debug, Default, Clone)]
@@ -16,6 +18,38 @@ pub trait Colorful {
     fn bclr_head(&self, clr: &Color) -> String;
     fn bold(&self) -> String;
     fn bold_head(&self) -> String;
+}
+
+impl Colorful for Utf16String {
+    fn color(&self, bclr: &Color, fclr: &Color) -> String {
+        format!(
+            "\x1b[48;2;{};{};{}m\x1b[38;2;{};{};{}m{self}{}",
+            bclr.r, bclr.g, bclr.b, fclr.r, fclr.g, fclr.b, END
+        )
+    }
+
+    fn bcolor(&self, clr: &Color) -> String {
+        format!("\x1b[48;2;{};{};{}m{self}{}", clr.r, clr.g, clr.b, END)
+    }
+
+    fn fcolor(&self, clr: &Color) -> String {
+        format!("\x1b[38;2;{};{};{}m{self}{}", clr.r, clr.g, clr.b, END)
+    }
+
+    fn bclr_head(&self, clr: &Color) -> String {
+        format!("\x1b[48;2;{};{};{}m{self}", clr.r, clr.g, clr.b)
+    }
+
+    fn fclr_head(&self, clr: &Color) -> String {
+        format!("\x1b[38;2;{};{};{}m{self}", clr.r, clr.g, clr.b)
+    }
+
+    fn bold(&self) -> String {
+        format!("\x1b[1m{self}{}", END)
+    }
+    fn bold_head(&self) -> String {
+        format!("\x1b[1m{self}")
+    }
 }
 
 impl Colorful for String {
