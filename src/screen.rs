@@ -6,7 +6,7 @@ use crate::{
     view::{help::Help, msgbox::MsgBox, Position},
 };
 use crossbeam_channel::Receiver;
-use getch_rs::{Getch, Key};
+use getch_rs::Key;
 use std::{
     collections::{HashMap, VecDeque},
     io::{self, stdout, Write},

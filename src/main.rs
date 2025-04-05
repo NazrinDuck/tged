@@ -10,17 +10,13 @@ use std::{
     thread,
 };
 use terminal::term::Term;
-use view::{
-    msgbox::{self, MsgBox},
-    View,
-};
+use view::msgbox::MsgBox;
 
 use signal_hook::consts::signal::*;
 use signal_hook::iterator::Signals;
 
 mod color;
 mod file;
-mod macros;
 mod prelude;
 mod screen;
 mod settings;
@@ -80,7 +76,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut file_mod: FileMod;
     let mut term = Term::new();
-    let mut settings = Settings::default();
+    let settings = Settings::default();
     let mut screen = Screen::new();
 
     let files_name = args.files_name;

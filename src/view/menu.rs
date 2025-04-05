@@ -22,7 +22,6 @@ impl Default for Menu {
 impl View for Menu {
     fn init(&mut self, module: &mut Module) {
         let settings = &module.settings;
-        //let (bclr, fclr) = (&settings.theme.stress_bclr, &settings.theme.stress_fclr);
         self.bcolor = settings.theme.weak_bclr.clone();
         self.search_bclr = settings.theme.stress_bclr.clone();
         self.search_fclr = settings.theme.bright_white.clone();
@@ -125,7 +124,7 @@ impl View for Menu {
         Cursor::set_csr(csr_x, y);
     }
     fn draw(&self, module: &mut Module) -> std::io::Result<()> {
-        let (term, settings) = (&module.term, &mut module.settings);
+        let term = &module.term;
         self.refresh(term);
         let (x, y) = self.get_start(term);
         Cursor::set_csr(x, y);
@@ -137,47 +136,22 @@ impl View for Menu {
 
 impl Menu {
     fn exec(&mut self, module: &mut Module) {
-        if let Some((cmd, argv)) = self.input.split_once(":") {
-            let cmd = cmd.trim();
-            let argv = argv.trim();
-            match cmd {
-                "quit" => {
-                    module.push_op(Op::Quit);
-                }
-                "search" => {
-                    module.sendmsg(String::from("MainView"), String::from(argv));
-                }
-                "save all" => {
-                    if argv != "n" || argv != "N" {
-                        module.file_mod.save_all().unwrap();
-                    }
-                }
-                "save as" => {
-                    module.file_mod.set_name(String::from(argv));
+        let cmd = self.input.trim();
+        match cmd {
+            "quit" => {
+                module.push_op(Op::Quit);
+            }
+            "save" => {
+                let name = &module.file_mod.name();
+                if !name.is_empty() {
+                    module.sendmsg(String::from("Menu"), format!("File \"{name}\" Saved"));
                     module.file_mod.save().unwrap();
-                    module.sendmsg(String::from("Menu"), format!("File \"{argv}\" Saved"));
-                    module.push_op(Op::Shift(String::from("MainView")));
+                } else {
+                    module.sendmsg(String::from("Menu"), String::from("Use <Ctrl+s>"));
                 }
-                _ => (),
             }
-        } else {
-            let cmd = self.input.trim();
-            match cmd {
-                "quit" => {
-                    module.push_op(Op::Quit);
-                }
-                "save" => {
-                    let name = &module.file_mod.name();
-                    if !name.is_empty() {
-                        module.sendmsg(String::from("Menu"), format!("File \"{name}\" Saved"));
-                        module.file_mod.save().unwrap();
-                    } else {
-                        module.sendmsg(String::from("Menu"), String::from("Use `save as: [NAME]`"));
-                    }
-                }
-                _ => (),
-            }
-        };
+            _ => (),
+        }
         self.input.clear();
         self.input_idx = 0;
     }

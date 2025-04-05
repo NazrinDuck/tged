@@ -36,13 +36,18 @@ pub struct MainView {
 //#[bcolor=(0x20, 0x20, 0x20)]
 impl View for MainView {
     fn update(&mut self, module: &mut Module) {
-        if let Some(msg) = module.recvmsg(&self.name) {
-            let id = msg.parse::<usize>().unwrap();
-            let curr_pos = (self.curr_idx, self.curr_line);
-            let scroll = self.scroll;
-            let file_mod = &mut module.file_mod;
-            let new_status = file_mod.shift_to(id, curr_pos, scroll);
-            self.sync(file_mod, new_status).unwrap();
+        match self.mode {
+            Mode::Search => {}
+            Mode::Normal => {
+                if let Some(msg) = module.recvmsg(&self.name) {
+                    let id = msg.parse::<usize>().unwrap();
+                    let curr_pos = (self.curr_idx, self.curr_line);
+                    let scroll = self.scroll;
+                    let file_mod = &mut module.file_mod;
+                    let new_status = file_mod.shift_to(id, curr_pos, scroll);
+                    self.sync(file_mod, new_status).unwrap();
+                }
+            }
         }
     }
     fn matchar(&mut self, module: &mut Module, key: getch_rs::Key) {
@@ -129,21 +134,16 @@ impl View for MainView {
 
                     let subline = if line_num == self.curr_line + 1 {
                         number = number.fcolor(lnum_sclr).bold();
-                        format!("{:<width$}", subline, width = (max_line) as usize)
-                            .color(&bclr.lighten(0x6), fclr)
+                        let mut highlight = subline.clone();
+                        highlight.push_str(&" ".repeat((max_line) as usize - subline.len()));
+
+                        highlight.clr_head(&bclr.lighten(0x6), fclr)
                     } else {
-                        number = number.fcolor(lnum_clr);
-                        subline.color(bclr, fclr)
+                        number = number.fcolor(lnum_clr).bclr_head(bclr);
+                        subline.clr_head(bclr, fclr)
                     };
 
                     lines.push(format!("{number}{subline}").into());
-                    /*
-                    lines.push(format!(
-                        "{:>width$}│{subline}",
-                        line_num,
-                        width = (line_num_offset - 1) as usize
-                    ));
-                    */
                 } else {
                     lines.push(subline);
                 }
@@ -151,17 +151,7 @@ impl View for MainView {
 
             for subline in lines {
                 Cursor::csr_setcol(x_pos);
-                let subline = if line_num == self.curr_line + 1 {
-                    format!(
-                        "{:<width$}",
-                        subline,
-                        width = (max_line + line_num_offset) as usize
-                    )
-                    .color(&bclr.lighten(0x6), fclr)
-                } else {
-                    subline.color(bclr, fclr)
-                };
-                print!("{}", subline);
+                print!("{}{}", subline, END);
                 height_cnt += 1;
                 if height_cnt > max_height {
                     break 'out;
@@ -176,12 +166,6 @@ impl View for MainView {
 
     fn init(&mut self, module: &mut Module) {
         let (file_mod, settings) = (&mut module.file_mod, &mut module.settings);
-        /*
-        let content = String::from_utf8_lossy(file_mod.get_content());
-        for line in content.lines() {
-            self.content.push(line.to_string());
-        }
-        */
         self.content = Rc::clone(file_mod.get_content());
 
         let (bclr, fclr) = (&settings.theme.normal_bclr, &settings.theme.normal_fclr);
@@ -405,7 +389,8 @@ impl MainView {
                     let mut content = self.content.borrow_mut();
                     let start = self.curr_idx;
                     let end = start + self.search_str.len();
-                    content[self.curr_line].replace_range(start..end, &Utf16String::from(ret));
+                    content[self.curr_line]
+                        .replace_range(start..end, &Utf16String::from(ret.clone()));
 
                     let search_str = self.search_str.clone();
 
@@ -425,10 +410,21 @@ impl MainView {
                     } else {
                         self.mode = Mode::Normal;
                     }
+
+                    module.sendmsg(
+                        String::from("Menu"),
+                        format!(
+                            "Replace String \"{}\" at Index {} with \"{}\"",
+                            self.search_str, self.search_idx, &ret
+                        ),
+                    );
+                    return;
                 }
             }
             Key::Char('\r') => {
                 self.mode = Mode::Normal;
+                module.sendmsg(String::from("Menu"), String::from("Return to Normal Mode"));
+                return;
             }
             Key::Up | Key::PageUp | Key::Left => {
                 let len = self.search_stack.len();
@@ -438,13 +434,6 @@ impl MainView {
                     self.search_idx = (self.search_idx - 1) % self.search_stack.len();
                 }
                 self.set_pos(self.search_stack[self.search_idx]);
-                module.sendmsg(
-                    String::from("Menu"),
-                    format!(
-                        "Search for String \"{}\" at Index {}",
-                        self.search_str, self.search_idx
-                    ),
-                );
             }
 
             Key::Down | Key::PageDown | Key::Right => {
@@ -481,6 +470,13 @@ impl MainView {
 
             _ => (),
         }
+        module.sendmsg(
+            String::from("Menu"),
+            format!(
+                "Search for String \"{}\" at Index {}",
+                self.search_str, self.search_idx
+            ),
+        );
     }
 
     pub fn normal_mode(&mut self, module: &mut Module, key: getch_rs::Key) {

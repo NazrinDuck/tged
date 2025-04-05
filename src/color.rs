@@ -14,6 +14,7 @@ pub trait Colorful {
     fn color(&self, bclr: &Color, fclr: &Color) -> String;
     fn fcolor(&self, clr: &Color) -> String;
     fn bcolor(&self, clr: &Color) -> String;
+    fn clr_head(&self, bclr: &Color, fclr: &Color) -> String;
     fn fclr_head(&self, clr: &Color) -> String;
     fn bclr_head(&self, clr: &Color) -> String;
     fn bold(&self) -> String;
@@ -36,6 +37,12 @@ impl Colorful for Utf16String {
         format!("\x1b[38;2;{};{};{}m{self}{}", clr.r, clr.g, clr.b, END)
     }
 
+    fn clr_head(&self, bclr: &Color, fclr: &Color) -> String {
+        format!(
+            "\x1b[48;2;{};{};{}m\x1b[38;2;{};{};{}m{self}",
+            bclr.r, bclr.g, bclr.b, fclr.r, fclr.g, fclr.b
+        )
+    }
     fn bclr_head(&self, clr: &Color) -> String {
         format!("\x1b[48;2;{};{};{}m{self}", clr.r, clr.g, clr.b)
     }
@@ -66,6 +73,12 @@ impl Colorful for String {
 
     fn fcolor(&self, clr: &Color) -> String {
         format!("\x1b[38;2;{};{};{}m{self}{}", clr.r, clr.g, clr.b, END)
+    }
+    fn clr_head(&self, bclr: &Color, fclr: &Color) -> String {
+        format!(
+            "\x1b[48;2;{};{};{}m\x1b[38;2;{};{};{}m{self}",
+            bclr.r, bclr.g, bclr.b, fclr.r, fclr.g, fclr.b
+        )
     }
 
     fn bclr_head(&self, clr: &Color) -> String {
@@ -98,6 +111,12 @@ impl Colorful for str {
 
     fn fcolor(&self, clr: &Color) -> String {
         format!("\x1b[38;2;{};{};{}m{self}{}", clr.r, clr.g, clr.b, END)
+    }
+    fn clr_head(&self, bclr: &Color, fclr: &Color) -> String {
+        format!(
+            "\x1b[48;2;{};{};{}m\x1b[38;2;{};{};{}m{self}",
+            bclr.r, bclr.g, bclr.b, fclr.r, fclr.g, fclr.b
+        )
     }
 
     fn bclr_head(&self, clr: &Color) -> String {

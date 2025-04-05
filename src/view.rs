@@ -1,7 +1,5 @@
 use crate::screen::Module;
-use crate::settings::Settings;
 use crate::terminal::term::Term;
-use crate::FileMod;
 use getch_rs::Key;
 use std::cmp::Ordering;
 use std::io;
@@ -14,7 +12,6 @@ pub mod help;
 pub mod mainview;
 pub mod menu;
 pub mod msgbox;
-pub mod settings;
 pub mod topbar;
 
 pub type ViewID = u64;

@@ -77,29 +77,17 @@ impl View for TopBar {
                 });
         self.content = content;
     }
-    fn matchar(&mut self, module: &mut Module, _: getch_rs::Key) {}
-    fn set_cursor(&self, module: &mut Module) {}
+    fn matchar(&mut self, _: &mut Module, _: getch_rs::Key) {}
+    fn set_cursor(&self, _: &mut Module) {}
     fn draw(&self, module: &mut Module) -> std::io::Result<()> {
-        let (term, settings) = (&module.term, &mut module.settings);
+        let (term, _) = (&module.term, &mut module.settings);
         self.refresh(term);
 
-        /*
-        let (bclr, fclr) = (&self.bcolor, &self.fcolor);
-        let width = self.end.0.unwrap(term.width) - self.start.0.unwrap(term.width);
-        */
         let (x, y) = self.get_start(term);
         Cursor::set_csr(x, y);
-        //let output = format!("{:^width$}", self.content, width = width.into());
-        //let output = format!("{}", self.content);
 
         print!("{}", self.content);
         io::stdout().flush()?;
         Ok(())
-    }
-}
-
-impl TopBar {
-    pub fn push_str(&mut self, string: &str) {
-        self.content.push_str(string);
     }
 }

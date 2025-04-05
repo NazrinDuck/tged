@@ -129,21 +129,24 @@ impl Dir {
         self.is_show = false;
     }
 
-    fn show(&self, bclr: &Color, depth: usize) {
+    fn faltten(&self, bclr: &Color, depth: usize) -> Vec<String> {
+        let mut flat = Vec::new();
         for item in &self.dir_items {
-            print!("{}   {}", bclr.bclr_head(), " ".repeat(depth * 2));
+            let head = format!("{}   {}", bclr.bclr_head(), " ".repeat(depth * 2));
             match item {
                 DirItem::Dir(dir) => {
-                    println!("{}", dir.name);
+                    flat.push(head + &dir.name.clone());
                     if dir.is_show {
-                        dir.show(bclr, depth + 1);
+                        let mut recu = dir.faltten(bclr, depth + 1);
+                        flat.append(&mut recu);
                     }
                 }
                 DirItem::File(name, _) => {
-                    println!("{}", name);
+                    flat.push(head + &name.clone());
                 }
             }
         }
+        flat
     }
 }
 
@@ -246,6 +249,7 @@ pub struct FileTree {
     dir: String,
     path: PathBuf,
     dir_items: Vec<DirItem>,
+    flat: Vec<String>,
     metadata: Option<Metadata>,
     curr_line: usize,
     scroll: usize,
@@ -253,10 +257,7 @@ pub struct FileTree {
 
 impl View for FileTree {
     fn init(&mut self, module: &mut Module) {
-        let (term, file_mod, settings) = (&module.term, &mut module.file_mod, &mut module.settings);
-        let start = self.get_start(term);
-        let end = self.get_end(term);
-        let max = end.0 - start.0;
+        let (file_mod, settings) = (&mut module.file_mod, &mut module.settings);
 
         let (bclr, fclr) = (
             &settings.theme.normal_bclr.darken(0x4),
@@ -267,15 +268,19 @@ impl View for FileTree {
         self.bcolor = bclr.clone();
         self.fcolor = fclr.clone();
         self.metadata = Some(self.path.metadata().unwrap());
-        let mut curr_dir = curr_dir.to_str().unwrap().to_string();
+        let curr_dir = curr_dir.to_str().unwrap().to_string();
+        /*
         curr_dir.truncate(max as usize);
         self.dir = curr_dir.color(bclr, fclr).bold();
+        */
+        self.dir = curr_dir;
         self.dir_items = read_dir_item(&self.path, bclr, fclr);
     }
 
-    fn update(&mut self, module: &mut Module) {
+    fn update(&mut self, _: &mut Module) {
         let metadata = self.path.metadata().unwrap();
         let prev_metadata = self.metadata.as_ref().unwrap();
+        let bclr = &self.bcolor;
 
         if metadata.modified().unwrap() != prev_metadata.modified().unwrap() {
             let (bclr, fclr) = (&self.bcolor, &self.fcolor);
@@ -296,20 +301,39 @@ impl View for FileTree {
             self.curr_line = 0;
             self.metadata = Some(metadata);
         };
+
+        let flat = self.dir_items.iter().fold(Vec::new(), |init, item| {
+            let mut flat = init;
+            let head = format!("{}   ", bclr.bclr_head());
+            match &item {
+                DirItem::Dir(dir) => {
+                    flat.push(head + &dir.name.clone());
+                    if dir.is_show {
+                        let mut recu = dir.faltten(bclr, 1);
+                        flat.append(&mut recu);
+                    }
+                }
+                DirItem::File(name, _) => {
+                    flat.push(head + &name.clone());
+                }
+            }
+            flat
+        });
+        self.flat = flat;
     }
     fn matchar(&mut self, module: &mut Module, key: getch_rs::Key) {
-        let (term, file_mod, settings) = (&module.term, &mut module.file_mod, &mut module.settings);
+        let term = &module.term;
         match key {
             Key::Char('\r') => {
                 self.enter(module);
             }
             Key::Delete => {}
             Key::Up => {
-                self.up(term, settings);
+                self.up();
             }
 
             Key::Down => {
-                self.down(term, settings);
+                self.down(term);
             }
 
             _ => (),
@@ -317,36 +341,38 @@ impl View for FileTree {
     }
     fn set_cursor(&self, module: &mut Module) {
         let term = &module.term;
-        let (mut csr_x, mut csr_y): (u16, u16) = self.get_start(term);
-        csr_y += self.curr_line as u16 + 1;
+        let (csr_x, mut csr_y): (u16, u16) = self.get_start(term);
+        csr_y += (self.curr_line - self.scroll) as u16 + 1;
 
         Cursor::set_csr(csr_x, csr_y);
     }
     fn draw(&self, module: &mut Module) -> std::io::Result<()> {
-        let (term, settings) = (&module.term, &mut module.settings);
+        let term = &module.term;
+        let (bclr, fclr) = (&self.bcolor, &self.fcolor);
         self.refresh(term);
         let (x, y) = self.get_start(term);
         let (x_e, y_e) = self.get_end(term);
-        let bclr = &self.bcolor;
 
-        let max_line = y_e - y;
+        let max_height = y_e - y;
+        let max = x_e - x;
+
         Cursor::set_csr(x, y);
-        println!("{}", self.dir);
 
-        for item in self.dir_items.iter() {
-            print!("{}   ", bclr.bclr_head());
-            match &item {
-                DirItem::Dir(dir) => {
-                    println!("{}", dir.name);
-                    if dir.is_show {
-                        dir.show(bclr, 1);
-                    }
-                }
-                DirItem::File(name, _) => {
-                    println!("{}", name);
-                }
+        let mut dir = self.dir.clone();
+        dir.truncate(max as usize);
+
+        println!("{}", dir.color(bclr, fclr));
+
+        let mut height_cnt = 1;
+        for line in self.flat.iter().skip(self.scroll) {
+            print!("{}", line);
+            height_cnt += 1;
+            if height_cnt > max_height {
+                break;
             }
+            Cursor::csr_nextline();
         }
+
         io::stdout().flush()?;
         Ok(())
     }
@@ -355,15 +381,6 @@ impl View for FileTree {
 impl FileTree {
     pub fn len(&self) -> usize {
         self.dir_items.iter().fold(0, |sum, item| sum + item.len())
-    }
-    #[inline]
-    pub fn up(&mut self, term: &Term, settings: &Settings) {
-        let line = self.curr_line;
-
-        if line > 0 {
-            self.curr_line -= 1;
-            //self.line_dec(term, settings);
-        }
     }
 
     #[inline]
@@ -392,12 +409,45 @@ impl FileTree {
     }
 
     #[inline]
-    pub fn down(&mut self, term: &Term, settings: &Settings) {
+    pub fn up(&mut self) {
+        let line = self.curr_line;
+
+        if line > 0 {
+            self.line_dec();
+        }
+    }
+
+    #[inline]
+    pub fn down(&mut self, term: &Term) {
         let line = self.curr_line;
 
         if line < self.len() - 1 {
-            self.curr_line += 1;
+            self.line_inc(term);
         }
+    }
+
+    #[inline]
+    fn line_inc(&mut self, term: &Term) {
+        let pre_all_lines = self.curr_line - self.scroll;
+
+        let height = (self.end.1.unwrap(term.height) - self.start.1.unwrap(term.height)) as usize;
+
+        if pre_all_lines + 4 > height {
+            self.scroll += 1;
+        }
+        self.curr_line += 1;
+    }
+
+    #[inline]
+    fn line_dec(&mut self) {
+        if self.scroll != 0 {
+            let pre_all_lines = self.curr_line - self.scroll;
+
+            if pre_all_lines < 4 {
+                self.scroll -= 1;
+            }
+        }
+        self.curr_line -= 1;
     }
 }
 

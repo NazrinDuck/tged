@@ -1,5 +1,4 @@
 use std::arch::asm;
-use std::process::exit;
 
 pub struct Term {
     pub height: u16,

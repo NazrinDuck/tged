@@ -1,93 +1,6 @@
 use crate::prelude::*;
 use getch_rs::Key;
 use std::str::FromStr;
-
-#[view("InputBar")]
-#[start=(1, 1)]
-#[end=(2, 2)]
-struct InputBar {
-    input_bclr: Color,
-    title: String,
-    input: String,
-    idx: usize,
-}
-
-impl View for InputBar {
-    fn init(&mut self, module: &mut Module) {
-        let settings = &module.settings;
-        self.fcolor = settings.theme.normal_fclr.clone();
-        self.bcolor = settings.theme.normal_bclr.clone();
-        self.input_bclr = settings.theme.black.clone();
-    }
-    fn update(&mut self, module: &mut Module) {}
-    fn matchar(&mut self, module: &mut Module, key: Key) {
-        let term = &module.term;
-        let max = self.get_end(term).0 - self.get_start(term).0;
-        match key {
-            Key::Char('\r') => {
-                self.lock = false;
-            }
-            Key::Char(ch) => {
-                if self.input.len() < max as usize {
-                    self.input.insert(self.idx, ch);
-                    self.idx += 1;
-                }
-            }
-            Key::Delete => {
-                if !self.input.is_empty() {
-                    self.idx -= 1;
-                    self.input.remove(self.idx);
-                }
-            }
-
-            Key::Left => {
-                if self.idx > 0 {
-                    self.idx -= 1;
-                }
-            }
-
-            Key::Right => {
-                if self.idx < self.input.len() {
-                    self.idx += 1;
-                }
-            }
-
-            _ => (),
-        }
-    }
-    fn set_cursor(&self, module: &mut Module) {
-        let term = &module.term;
-        let (x, y) = self.get_start(term);
-        let csr_x = x + 1 + self.idx as u16;
-        Cursor::set_csr(csr_x, y + 1);
-    }
-    fn draw(&self, module: &mut Module) -> io::Result<()> {
-        let term = &module.term;
-        self.refresh(term);
-        let (x, y) = self.get_start(term);
-        let x_e = self.get_end(term).0;
-        let max_x = (x_e - x) as usize;
-        let f_clr = self.fcolor.fclr_head();
-        let b_clr = self.bcolor.bclr_head();
-        let input_bclr = self.input_bclr.bclr_head();
-        Cursor::set_csr(x, y);
-        println!("{f_clr}{b_clr}╭{:─^width$}╮", self.title, width = max_x - 2);
-
-        Cursor::csr_setcol(x);
-        println!(
-            "{f_clr}{b_clr}│{input_bclr}{:<width$}{b_clr}│",
-            self.input,
-            width = max_x - 2
-        );
-
-        Cursor::csr_setcol(x);
-        println!("{f_clr}{b_clr}╰{}╯", "─".repeat(max_x - 2));
-        io::stdout().flush()?;
-
-        Ok(())
-    }
-}
-
 #[view("MsgBox")]
 #[start=(1, 1)]
 #[end=(2, 2)]
@@ -103,10 +16,10 @@ impl View for MsgBox {
         self.fcolor = settings.theme.normal_fclr.clone();
         self.bcolor = settings.theme.normal_bclr.clone();
     }
-    fn update(&mut self, module: &mut Module) {}
+    fn update(&mut self, _: &mut Module) {}
     fn matchar(&mut self, module: &mut Module, key: getch_rs::Key) {
         let term = &module.term;
-        let max = self.get_end(term).0 - self.get_start(term).0;
+        let max = self.get_end(term).0 - self.get_start(term).0 - 2;
         match key {
             Key::End => {
                 self.input = String::new();

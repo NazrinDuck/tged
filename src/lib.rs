@@ -1,15 +1,13 @@
 extern crate proc_macro;
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
-use quote::{quote, quote_spanned};
+use quote::quote;
 use std::cmp::Ordering;
 use std::fmt::Display;
 use std::ops::Neg;
 use std::str::FromStr;
-use syn::spanned::Spanned;
 use syn::{
-    parenthesized, parse_macro_input, Attribute, Data, DeriveInput, Error, Expr, ExprArray,
-    ExprGroup, ExprLit, ExprTuple, Fields, Ident, Lit, Meta, Stmt, Type, UnOp,
+    parse_macro_input, Attribute, Data, DeriveInput, Error, Expr, Fields, Lit, Meta, Type, UnOp,
 };
 
 ///
@@ -20,7 +18,6 @@ use syn::{
 #[proc_macro_attribute]
 pub fn view(attr: TokenStream, item: TokenStream) -> TokenStream {
     let input = parse_macro_input!(item as DeriveInput);
-    //dbg!(&attr);
     let attr = parse_macro_input!(attr as Lit);
 
     let name_field = match parse_view_attr(attr) {
