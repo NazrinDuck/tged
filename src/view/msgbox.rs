@@ -1,6 +1,11 @@
+/// MsgBox提供一个能输入的弹窗
+///
+/// 通过<Enter>来提交输入的内容，会返回输入的内容
+/// 可以指定返回的类型
 use crate::prelude::*;
 use getch_rs::Key;
 use std::str::FromStr;
+
 #[view("MsgBox")]
 #[start=(1, 1)]
 #[end=(2, 2)]
@@ -21,7 +26,7 @@ impl View for MsgBox {
         let term = &module.term;
         let max = self.get_end(term).0 - self.get_start(term).0 - 2;
         match key {
-            Key::End => {
+            Key::Esc => {
                 self.input = String::new();
                 self.lock = false;
             }

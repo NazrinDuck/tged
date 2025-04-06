@@ -1,3 +1,16 @@
+/// MainView为主视图
+///
+/// 通过方向键移动光标，键盘输入字符
+///
+/// - 键入<F6>顺序切换当前文件
+/// - 键入<F7>逆序切换当前文件
+/// - 键入<F8>根据输入切换文件
+///
+/// - 键入<Ctrl+s>保存当前文件，若没有名字则会有弹窗来输入
+/// - 键入<Ctrl+f>开启查找模式，输入字符串后通过方向键来定位所有匹配项
+/// - 再次键入<Ctrl+f>可以开启替换模式，输入要替换的内容并回车完成替换
+///
+/// - 键入<Alt+Left>/<Alt+Right>改变主视图大小
 use crate::prelude::*;
 use crate::MsgBox;
 
@@ -17,7 +30,6 @@ enum Mode {
 #[view("MainView")]
 #[start=(26, 3)]
 #[end=(-1, -2)]
-//#[prior = 4]
 pub struct MainView {
     //line number's color
     lnum_clr: Color,
@@ -33,7 +45,6 @@ pub struct MainView {
     search_idx: usize,
 }
 
-//#[bcolor=(0x20, 0x20, 0x20)]
 impl View for MainView {
     fn update(&mut self, module: &mut Module) {
         match self.mode {
@@ -41,6 +52,11 @@ impl View for MainView {
             Mode::Normal => {
                 if let Some(msg) = module.recvmsg(&self.name) {
                     let id = msg.parse::<usize>().unwrap();
+                    module.sendmsg(
+                        String::from("Menu"),
+                        format!("Change to File No.{}", id + 1),
+                    );
+
                     let curr_pos = (self.curr_idx, self.curr_line);
                     let scroll = self.scroll;
                     let file_mod = &mut module.file_mod;
@@ -133,7 +149,10 @@ impl View for MainView {
                     };
 
                     let subline = if line_num == self.curr_line + 1 {
-                        number = number.fcolor(lnum_sclr).bold();
+                        number = number
+                            .fcolor(lnum_sclr)
+                            .bold()
+                            .bclr_head(&bclr.lighten(0x6));
                         let mut highlight = subline.clone();
                         highlight.push_str(&" ".repeat((max_line) as usize - subline.len()));
 
@@ -516,6 +535,11 @@ impl MainView {
                                 self.search_str, self.search_idx
                             ),
                         );
+                    } else {
+                        module.sendmsg(
+                            String::from("Menu"),
+                            format!("Can't Find String \"{}\"", self.search_str),
+                        );
                     }
                 }
             }
@@ -589,6 +613,33 @@ impl MainView {
                 let scroll = self.scroll;
                 let new_status = file_mod.shift(curr_pos, scroll);
                 self.sync(file_mod, new_status).unwrap();
+            }
+
+            Key::F(7) => {
+                let curr_pos = (self.curr_idx, self.curr_line);
+                let scroll = self.scroll;
+                let new_status = file_mod.rshift(curr_pos, scroll);
+                self.sync(file_mod, new_status).unwrap();
+            }
+
+            Key::F(8) => {
+                let curr_pos = (self.curr_idx, self.curr_line);
+                let scroll = self.scroll;
+                let file_id = MsgBox::new()
+                    .title("Input File Number")
+                    .default_pos(module)
+                    .wait::<usize>(module)
+                    .unwrap_or_default();
+                let curr_id = module.file_mod.curr_id();
+                if file_id != 0 && file_id <= curr_id {
+                    module.sendmsg(
+                        String::from("Menu"),
+                        format!("Change to File No.{}", file_id),
+                    );
+
+                    let new_status = module.file_mod.shift_to(file_id - 1, curr_pos, scroll);
+                    self.sync(&mut module.file_mod, new_status).unwrap();
+                }
             }
 
             Key::Other(key) => {

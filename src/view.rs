@@ -16,6 +16,9 @@ pub mod topbar;
 
 pub type ViewID = u64;
 
+/// 枚举类型`Pos`
+/// - `Fixed`：离左/上边框的距离
+/// - `Opposite`：离右/下边框的距离
 #[derive(Debug, Clone)]
 pub enum Pos {
     Fixed(u16),
@@ -23,6 +26,7 @@ pub enum Pos {
 }
 
 impl Pos {
+    /// 将相对距离转变为绝对距离
     pub fn unwrap(&self, value: u16) -> u16 {
         match self {
             Pos::Fixed(val) => *val + 1,
@@ -30,6 +34,7 @@ impl Pos {
         }
     }
 
+    /// 直接取值
     pub fn get(&self) -> u16 {
         match self {
             Pos::Fixed(val) => *val,
@@ -38,6 +43,7 @@ impl Pos {
     }
 }
 
+/// 加法操作：直接对枚举值进行加法
 impl Add<i16> for Pos {
     type Output = Self;
     fn add(self, rhs: i16) -> Self::Output {
@@ -62,6 +68,9 @@ impl Add<i16> for Pos {
     }
 }
 
+/// 类型转换
+/// - 将正数转换为`Pos::Fixed(val_abs)`
+/// - 将负数转换为`Pos::Opposite(val_abs)`
 impl TryFrom<i16> for Pos {
     type Error = &'static str;
     fn try_from(value: i16) -> Result<Self, Self::Error> {
@@ -75,6 +84,7 @@ impl TryFrom<i16> for Pos {
     }
 }
 
+/// 后端trait，定义了视图的显示/杂项功能
 pub trait Position {
     fn get_name(&self) -> &String;
     fn get_start(&self, term: &Term) -> (u16, u16);
@@ -85,15 +95,24 @@ pub trait Position {
     fn is_show(&self) -> bool;
 }
 
+/// 前端核心trait，定义了视图的基本功能
+/// 继承自`Position`
 pub trait View: Position {
+    /// 初始化
     fn init(&mut self, module: &mut Module);
+    /// 匹配字符，编写字符处理逻辑
     fn matchar(&mut self, module: &mut Module, key: Key);
+    /// 编写光标位置处理逻辑
     fn set_cursor(&self, module: &mut Module);
+    /// 更新操作，在`draw`前调用
     fn update(&mut self, module: &mut Module);
+    /// 核心绘图操作，用于显示内容
     fn draw(&self, module: &mut Module) -> io::Result<()>;
 }
 
+/// 为字符串相关类型附加的迭代器trait
 pub trait SplitNAt {
+    /// 把字符串分成长度为`mid`的子串，并返回迭代器
     fn splitn_at(&self, mid: usize) -> SplitNAtIter<Self>
     where
         Self: std::marker::Sized;

@@ -10,11 +10,92 @@ use syn::{
     parse_macro_input, Attribute, Data, DeriveInput, Error, Expr, Fields, Lit, Meta, Type, UnOp,
 };
 
+/// 类属性宏(Attribute-like macros) `#[view]`
+/// 目前仅允许在结构体(`struct`)上使用
 ///
+/// 该宏旨在更加方便地开发新的视图（`view`）
 ///
-/// pos: (u16, u16),
-/// height: u16,
-/// width: u16,
+/// 使用方法：
+/// ```
+///     #[view(name)]               // 必填，设置名字
+///     #[start=(start_x, start_y)] // 必填，设置起始位置
+///     #[end=(end_x, end_y)]       // 必填，设置结束位置
+///     #[fcolor=(r, g, b)]         // 可选，设置前景颜色
+///     #[bcolor=(r, g, b)]         // 可选，设置背景颜色
+///     #[silent]                   // 可选，设置沉默（无法被聚焦）
+///     struct FooBar { ... }
+/// ```
+/// 其中：
+///  - 坐标值为正：离左/上边框的距离
+///  - 坐标值为负：离右/下边框的距离
+///
+/// 限制条件：
+///  - 坐标值不能为0
+///  - r, g, b必须有效（0～255）
+///
+/// 应用该宏会添加以下结构体成员:
+/// ```
+/// {
+///     ...
+///     name: String
+///     start: (Pos, Pos),
+///     end: (Pos, Pos),
+///     silent: bool,
+///     lock: bool,
+///     show: bool,
+///     fcolor: Color,
+///     bcolor: Color,
+///     ...
+/// }
+/// ```
+/// 除此之外，该宏会自动为原结构体应用`Position` trait，自动生成trait所需的函数
+/// 该宏还会附加方法`fn new() -> Self`与`fn refresh(&self, term: &Term)`,
+/// 前者用于获取该结构体, 后者用于刷新界面
+///
+/// 该宏一般与trait `View`一起使用，来开发完整逻辑的视图
+/// 要让视图显示，调用结构体`Screen`的`register`方法注册视图，
+/// `register`方法只接受实现了`View` trait的结构体
+///
+/// >为了正常显示，***保证在`draw`中调用`refresh`方法***
+///
+/// 示例：
+/// ```
+/// // in foobar.rs
+/// #[view("FooBar")]
+/// #[start=(1, 1)]
+/// #[end=(2, -1)]
+/// #[silent]
+/// struct FooBar {
+///     content: String
+/// }
+///
+/// impl View for FooBar {
+///     fn init(&mut self, _: &mut Module) {
+///         self.content = String::from("hello, world");
+///     };
+///     fn matchar(&mut self, _: &mut Module, _: Key) {};
+///     fn set_cursor(&self, _: &mut Module) {};
+///     fn update(&mut self, _: &mut Module) {};
+///     fn draw(&self, module: &mut Module) -> io::Result<()> {
+///         let term = &module.term;
+///         self.refresh(term);
+///         println!("{}", self.content);
+///         Ok(())
+///     };
+/// }
+///
+/// // in screen.rs
+/// impl Screen {
+///     ...
+///     pub fn init(&mut self, module: &mut Module) -> io::Result<()> {
+///         ...
+///         let foobar = FooBar::new();
+///         self.register(Box::new(foobar));
+///         ...
+///     }
+///     ...
+/// }
+/// ```
 #[proc_macro_attribute]
 pub fn view(attr: TokenStream, item: TokenStream) -> TokenStream {
     let input = parse_macro_input!(item as DeriveInput);
@@ -156,7 +237,6 @@ pub fn view(attr: TokenStream, item: TokenStream) -> TokenStream {
         pub fn new() -> Self {
             #name {
                 #name_field
-                id: 0,
                 lock: false,
                 show: true,
                 #pos_fields
@@ -196,7 +276,6 @@ pub fn view(attr: TokenStream, item: TokenStream) -> TokenStream {
         #[derive(Debug, Clone)]
         #vis struct #name #generics {
             name: String,
-            id: ViewID,
             start: (Pos, Pos),
             end: (Pos, Pos),
             silent: bool,

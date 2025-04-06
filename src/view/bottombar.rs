@@ -1,3 +1,6 @@
+/// BottomBar为最底下的状态栏
+///
+/// 显示目前视图，文件名及文件大小
 use crate::prelude::*;
 
 #[view("BottomBar")]
@@ -16,7 +19,6 @@ pub struct BottomBar {
 impl View for BottomBar {
     fn init(&mut self, module: &mut Module) {
         let settings = &module.settings;
-        //let (bclr, fclr) = (&settings.theme.stress_bclr, &settings.theme.stress_fclr);
         self.bcolor_lv1 = settings.theme.stress_fclr.clone();
         self.fcolor_lv1 = settings.theme.black.clone();
         self.bcolor_lv2 = settings.theme.stress_bclr.clone();

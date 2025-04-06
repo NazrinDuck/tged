@@ -1,3 +1,7 @@
+/// Menu为最上方的状态条
+///
+/// 在被聚焦时可以输入命令，通过<Enter>来提交命令并尝试执行
+/// 在其他时间会根据目前的状态显示一些信息
 use crate::prelude::*;
 use getch_rs::Key;
 
@@ -150,7 +154,9 @@ impl Menu {
                     module.sendmsg(String::from("Menu"), String::from("Use <Ctrl+s>"));
                 }
             }
-            _ => (),
+            other => {
+                module.sendmsg(String::from("Menu"), format!("Unkonwn Command: `{other}`"));
+            }
         }
         self.input.clear();
         self.input_idx = 0;

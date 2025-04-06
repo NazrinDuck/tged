@@ -9,6 +9,10 @@ pub struct Color {
     b: u8,
 }
 
+/// 颜色相关trait
+/// 为字符串附加指定的前景/背景色或粗体效果
+///
+/// `_head`结尾方法没有取消显示效果，需要手动在结尾添加`END`
 #[allow(unused)]
 pub trait Colorful {
     fn color(&self, bclr: &Color, fclr: &Color) -> String;

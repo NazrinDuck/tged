@@ -1,3 +1,4 @@
+/// 光标事件
 #[derive(Debug)]
 pub struct Cursor();
 
@@ -23,18 +24,22 @@ impl Cursor {
         print!("\x1b[{col}G")
     }
 
+    #[inline]
     pub fn hide_csr() {
         print!("\x1b[?25l")
     }
 
+    #[inline]
     pub fn save_csr() {
         print!("\x1b[s")
     }
 
+    #[inline]
     pub fn restore_csr() {
         print!("\x1b[u")
     }
 
+    #[inline]
     pub fn show_csr() {
         print!("\x1b[?25h")
     }

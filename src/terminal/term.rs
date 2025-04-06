@@ -1,10 +1,12 @@
 use std::arch::asm;
 
+/// 存储目前的终端长宽
 pub struct Term {
     pub height: u16,
     pub width: u16,
 }
 
+/// 参考: https://www.man7.org/linux/man-pages/man2/TIOCGWINSZ.2const.html
 #[derive(Default, Debug)]
 #[repr(C)]
 struct WinSize {
@@ -26,6 +28,7 @@ impl Term {
         (self.height * self.width) as usize
     }
 
+    /// 内联汇编实现系统调用，得到窗口尺寸
     pub fn init(&mut self) {
         let winsize: WinSize = Default::default();
         let mut res: i32;
@@ -42,7 +45,6 @@ impl Term {
         if res < 0 {
             panic!("can't get tty size!");
         }
-        //dbg!(&winsize);
         self.height = winsize.ws_col;
         self.width = winsize.ws_row;
     }

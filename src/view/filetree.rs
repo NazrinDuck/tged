@@ -1,3 +1,7 @@
+/// FileTree为最左侧的文件树
+///
+/// 在被聚焦时可以通过方向键移动
+/// 输入<Enter>可以打开文件或者展开文件夹
 use crate::prelude::*;
 
 use getch_rs::Key;
@@ -269,10 +273,6 @@ impl View for FileTree {
         self.fcolor = fclr.clone();
         self.metadata = Some(self.path.metadata().unwrap());
         let curr_dir = curr_dir.to_str().unwrap().to_string();
-        /*
-        curr_dir.truncate(max as usize);
-        self.dir = curr_dir.color(bclr, fclr).bold();
-        */
         self.dir = curr_dir;
         self.dir_items = read_dir_item(&self.path, bclr, fclr);
     }

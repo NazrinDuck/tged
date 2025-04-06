@@ -12,13 +12,19 @@ use std::{
     io::{self, stdout, Write},
 };
 
-use widestring::Utf16String;
-
 use crate::view::{
     bottombar::BottomBar, filetree::FileTree, mainview::MainView, menu::Menu, topbar::TopBar, View,
     ViewID,
 };
 
+/// 处理核心逻辑
+///
+/// <F1>～<F5>按键被保留作固定功能
+/// <F1>: 打开帮助
+/// <F2>: 聚焦至主视图
+/// <F3>: 聚焦至文件树
+/// <F4>: 聚焦至菜单
+/// <F5>: 顺序切换视图
 pub struct Screen {
     focus: ViewID,
     id_cnt: u64,
@@ -26,6 +32,7 @@ pub struct Screen {
     name_map: HashMap<String, ViewID>,
 }
 
+/// 操作枚举
 pub enum Op {
     Nothing,
     Shift(String),
@@ -33,6 +40,7 @@ pub enum Op {
     Quit,
 }
 
+/// 集成模块，提供各种信息以及视图间通信功能
 pub struct Module {
     pub term: Term,
     pub file_mod: FileMod,
@@ -40,6 +48,7 @@ pub struct Module {
     pub curr_view: String,
     message: HashMap<String, VecDeque<String>>,
     operation: Vec<Op>,
+    /// 键盘事件接受管道
     key_recv: Receiver<Key>,
 }
 
@@ -61,6 +70,7 @@ impl Module {
         }
     }
 
+    /// 向`to`发送信息`content`
     pub fn sendmsg(&mut self, to: String, content: String) {
         let msg_queue = self.message.get_mut(&to);
         match msg_queue {
@@ -75,6 +85,7 @@ impl Module {
         }
     }
 
+    /// 从`name`处接受信息
     pub fn recvmsg(&mut self, name: &String) -> Option<String> {
         let msg_queue = self.message.get_mut(name);
         match msg_queue {
@@ -187,8 +198,6 @@ impl Screen {
     }
 
     pub fn interact(&mut self, module: &mut Module, key: Key) -> io::Result<bool> {
-        //let ch = Getch::new();
-        let mut cls = true;
         let main_view = self.view_map.get_mut(&self.focus).unwrap();
         match key {
             // press ESC to leave
@@ -247,27 +256,6 @@ impl Screen {
                 }
             }
 
-            /*
-             */
-            // for debug
-            Key::Ctrl('r') => {
-                cls = false;
-                dbg!(&module.message);
-            }
-            Key::Ctrl('d') => {
-                cls = false;
-                let a = Utf16String::from("啊啊");
-                dbg!(a.len());
-                dbg!(a.chars().count());
-            }
-            Key::Ctrl('k') => {
-                cls = false;
-                dbg!(&module.file_mod);
-            }
-            Key::Alt(key) => {
-                cls = false;
-                dbg!(key);
-            }
             // measure input key
             key => {
                 main_view.matchar(module, key);
@@ -275,6 +263,7 @@ impl Screen {
         }
         module.file_mod.update()?;
 
+        // 处理模块操作队列
         while !module.operation.is_empty() {
             let op = module.operation.pop().unwrap_or(Op::Nothing);
             match &op {
@@ -292,128 +281,9 @@ impl Screen {
             }
         }
 
-        if cls {
-            self.update(module)?;
-        }
+        // 更新状态
+        self.update(module)?;
 
         Ok(false)
     }
-
-    /*
-    pub fn interact(&mut self, module: &mut Module) -> io::Result<()> {
-        Screen::clean(&module.term)?;
-
-        let mut cls = true;
-        'out: loop {
-            let ch = Getch::new();
-
-            if cls {
-                let main_view = self.view_map.get_mut(&self.focus).unwrap();
-                main_view.update(module);
-
-                for (id, view) in self.view_map.iter_mut() {
-                    if *id != self.focus {
-                        view.update(module);
-                        if view.is_show() {
-                            view.draw(module)?;
-                        }
-                    }
-                }
-
-                let main_view = self.view_map.get_mut(&self.focus).unwrap();
-                main_view.draw(module)?;
-                main_view.set_cursor(module);
-            }
-            let main_view = self.view_map.get_mut(&self.focus).unwrap();
-            stdout().flush()?;
-
-            cls = true;
-            match ch.getch() {
-                // press ESC to leave
-                Ok(Key::Esc) => {
-                    &module.file_mod;
-                    break;
-                }
-
-                // reserve key F1 ~ F5 for fixed function
-                Ok(Key::F(1)) => {
-                    let help = String::from("Help");
-                    if module.curr_view == help {
-                        module.curr_view = self.shift().clone();
-                    } else {
-                        module.curr_view = self.shift_to(&help).clone();
-                    }
-                }
-                Ok(Key::F(2)) => {
-                    let main = String::from("MainView");
-                    module.curr_view = self.shift_to(&main).clone();
-                }
-
-                Ok(Key::F(3)) => {
-                    let file_tree = String::from("FileTree");
-                    module.curr_view = self.shift_to(&file_tree).clone();
-                }
-
-                Ok(Key::F(4)) => {
-                    let menu = String::from("Menu");
-                    module.curr_view = self.shift_to(&menu).clone();
-                }
-
-                Ok(Key::F(5)) => {
-                    if !main_view.is_lock() {
-                        module.curr_view = self.shift().clone();
-                    }
-                }
-
-                /*
-                // for debug
-                Ok(Key::Ctrl('r')) => {
-                    cls = false;
-                    dbg!(&module.message);
-                }
-                Ok(Key::Ctrl('d')) => {
-                    cls = false;
-                    let con = &module.file_mod.curr().flatten();
-                    dbg!(String::from_utf8_lossy(con));
-                }
-                Ok(Key::Ctrl('k')) => {
-                    cls = false;
-                    dbg!(&module.file_mod);
-                }
-                */
-                Ok(Key::Alt(key)) => {
-                    cls = false;
-                    dbg!(key);
-                }
-
-                // measure input key
-                Ok(key) => {
-                    main_view.matchar(module, key);
-                }
-                Err(e) => panic!("{}", e),
-            }
-            module.file_mod.update()?;
-
-            while !module.operation.is_empty() {
-                let op = module.operation.pop().unwrap_or(Op::Nothing);
-                match &op {
-                    Op::Nothing => (),
-                    Op::Shift(name) => {
-                        module.curr_view = self.shift_to(name).clone();
-                    }
-                    Op::Resize(name, size) => {
-                        let (dx_s, dy_s, dx_e, dy_e) = *size;
-                        let id = self.name_map.get(name).unwrap();
-                        let view = self.view_map.get_mut(id).unwrap();
-                        view.resize(dx_s, dy_s, dx_e, dy_e);
-                    }
-                    Op::Quit => break 'out,
-                }
-            }
-        }
-
-        Screen::clean(&module.term)?;
-        Ok(())
-    }
-    */
 }

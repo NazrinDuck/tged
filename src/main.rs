@@ -23,27 +23,19 @@ mod settings;
 mod terminal;
 mod view;
 
-/*
-*       TgEd
-*        |
-*  |-----|----------|
-* File  Screen  Settings
-*        |
-*       View
-*/
-
-//use crate::view::settings::Settings;
-
 #[derive(Parser)]
 #[command(version = "0.1.0",author = "NazrinDuck", about, long_about = None)]
 pub struct Args {
+    /// 文件路径（不能包含目录）
     #[arg(value_name = "FILE")]
     pub files_name: Vec<String>,
 
+    /// 工作目录
     #[arg(short = 'd', long = "dir", value_name = "DIR", default_value_t = String::from("."))]
     pub dir: String,
 }
 
+/// 用线程接收键盘事件
 fn key_channel() -> Receiver<Key> {
     let ch = Getch::new();
     let (sender, receiver) = bounded(500);
@@ -54,6 +46,7 @@ fn key_channel() -> Receiver<Key> {
     receiver
 }
 
+/// 用线程接收终端大小更改(SIGWINCH)信号
 fn term_channel() -> Receiver<Term> {
     let mut signals = Signals::new([SIGWINCH]).unwrap();
     let (sender, receiver) = bounded(500);
@@ -67,11 +60,26 @@ fn term_channel() -> Receiver<Term> {
     receiver
 }
 
+/// 结构展示：
+/// ```txt
+///    Screen <---- Module
+///       |             |
+///       |        |----------------|----------|
+///       |      FileMod        Settings     Term
+///       |        |                |         |
+///    Views       |              Theme     Cursor
+///      |       Files
+///      |         |
+///  Content <--  Content
+/// ```
+/// `Screen`负责处理主要逻辑，`main`函数负责监听事件
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // 检测是否在终端中
     if !io::stdout().is_terminal() {
         return Err("Please use in terminal/tty".into());
     }
 
+    // 解析参数
     let args = Args::parse();
 
     let mut file_mod: FileMod;
@@ -103,9 +111,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     term.init();
     let mut module = Module::new(term, file_mod, settings, key_events.clone());
 
+    // 初始化
     screen.init(&mut module)?;
     Screen::clean(&module.term)?;
     screen.update(&mut module)?;
+
+    // 监听各种事件
     loop {
         // start interact
         select! {
@@ -115,6 +126,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 };
             }
 
+            // 更改终端大小
             recv(term_events) -> term => {
                 module.term = term?;
                 screen.update(&mut module)?;
@@ -122,6 +134,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         };
     }
 
+    // 结束清理
     Screen::clean(&module.term)?;
 
     Ok(())

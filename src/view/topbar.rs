@@ -1,3 +1,6 @@
+/// TopBar为第二行的文件名
+///
+/// 显示所有已经打开的文件，并高亮目前的文件
 use crate::prelude::*;
 
 #[view("TopBar")]

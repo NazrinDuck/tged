@@ -11,6 +11,7 @@ use std::time::SystemTime;
 use widestring::Utf16String;
 
 pub(crate) type FileID = usize;
+/// 通过`Rc`与`RefCell`复合实现`Content`的多所有者的功能，便于与`Screen`前端对接
 pub(crate) type Content = Rc<RefCell<Vec<Utf16String>>>;
 
 impl From<&PathBuf> for FileBuf {
@@ -65,16 +66,23 @@ impl From<&PathBuf> for FileBuf {
     }
 }
 
+/// 描述单个文件的结构体
+/// 文件可以不存在，此时在保存时会自动创建新文件
+/// 若没有名字，会进行询问
 #[derive(Debug)]
 pub struct FileBuf {
     name: String,
     file: Option<File>,
+    /// 是否有修改
     dirty: bool,
+    /// 记录光标坐标信息
     pos: (usize, usize),
+    /// 记录显示滚动信息
     scroll: usize,
     pathbuf: PathBuf,
     metadata: Option<Metadata>,
     content: Content,
+    /// 备份，用于检查是否有修改
     copies: Vec<u8>,
 }
 
@@ -266,6 +274,8 @@ impl FileBuf {
     }
 }
 
+/// 集中了所有打开的文件的文件模块
+/// 方便与显示模块对接
 #[derive(Debug)]
 pub struct FileMod {
     file_map: HashMap<FileID, FileBuf>,
@@ -291,6 +301,7 @@ impl FileMod {
         self.curr_dir = fs::canonicalize(dir).unwrap();
     }
 
+    /// 通过计算哈希并与备份的哈希值比较来记录是否被修改
     #[inline]
     pub fn update(&mut self) -> io::Result<()> {
         for file in self.file_map.values_mut() {
@@ -323,16 +334,6 @@ impl FileMod {
         &self.curr_dir
     }
 
-    /*
-    pub fn insert(&mut self, name: String) -> FileID {
-        let cnt = self.file_cnt;
-        let file_buf = FileBuf::new(name).unwrap();
-        self.file_map.insert(cnt, file_buf);
-        self.file_cnt += 1;
-        self.file_cnt
-    }
-    */
-
     pub fn insert_from_path(&mut self, path: &PathBuf) -> FileID {
         let cnt = self.file_cnt;
         let file_buf = FileBuf::from(path);
@@ -340,7 +341,7 @@ impl FileMod {
         if id == 0 {
             self.file_map.insert(cnt, file_buf);
             self.file_cnt += 1;
-            self.file_cnt
+            self.file_cnt - 2
         } else {
             id - 1
         }
@@ -400,6 +401,18 @@ impl FileMod {
         self.mut_curr().save_status(pos, scroll);
         let mut curr_file = self.curr_file.unwrap();
         curr_file = curr_file % (self.file_cnt - 1) + 1;
+        self.curr_file = Some(curr_file);
+        self.file_map.get(&curr_file).unwrap().get_status()
+    }
+
+    #[inline]
+    pub fn rshift(&mut self, pos: (usize, usize), scroll: usize) -> (usize, usize, usize) {
+        self.mut_curr().save_status(pos, scroll);
+        let mut curr_file = self.curr_file.unwrap();
+        curr_file -= 1;
+        if curr_file == 0 {
+            curr_file += self.file_cnt - 1;
+        }
         self.curr_file = Some(curr_file);
         self.file_map.get(&curr_file).unwrap().get_status()
     }

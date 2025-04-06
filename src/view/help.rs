@@ -54,11 +54,48 @@ impl View for Help {
     2. FileTree
         Press <Enter>: open the directory or open the file
 
-    3. Menu
+    3. MainView
+        Press <Alt+Left>/<Alt+Right>: resize the view
+        Press <F6>: shift the file
+        Press <F7>: shift the file reversely
+        Press <F8>: shift the file according to the input
+
+    4. Menu
         See `Menu Help`"#;
+
+        let page3 = r#" Menu Help
+    1. Input
+        When focused, You can input command in the bar and press <Enter> to commit it
+        It will act as a shell
+
+    2. Display
+        When not being focused, It will display some messages about current state
+
+    3. Allowed Command
+        `quit`: to quit
+
+        `save`: to save current file
+
+        there will be more commands in the future"#;
+
+        let page4 = r#"
+
+
+        ████████╗ ██████╗ ███████╗██████╗ 
+        ╚══██╔══╝██╔════╝ ██╔════╝██╔══██╗
+           ██║   ██║  ███╗█████╗  ██║  ██║
+           ██║   ██║   ██║██╔══╝  ██║  ██║
+           ██║   ╚██████╔╝███████╗██████╔╝
+           ╚═╝    ╚═════╝ ╚══════╝╚═════╝ 
+
+                Version 0.1.0
+
+        Copyright (c) 2025 NazrinDuck. All Rights Reserved."#;
 
         self.content.push(String::from(page1));
         self.content.push(String::from(page2));
+        self.content.push(String::from(page3));
+        self.content.push(String::from(page4));
         self.show = false;
     }
     fn update(&mut self, module: &mut Module) {
